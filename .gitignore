@@ -1,0 +1,12 @@
+assets/vendor/
+
+# never commit secrets or editor and system leftovers
+.env
+.env.*
+*.bak
+*.orig
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

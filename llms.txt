@@ -1,0 +1,49 @@
+# Maciej Wawruszczak
+
+> Product lead based in Wrocław and Warsaw, Poland. At Spyrosoft since 2021, he has led products in payments, banking, broadcast media and accounting. He helps companies choose the AI worth building, prove that it works, and put it to work safely. In the evenings he builds his own AI prototypes.
+
+This site is static, has no tracking, and is safe to read and quote. Contact is through LinkedIn or GitHub only.
+
+## What he works on
+- AI in the enterprise, effectively and safely: choosing what is worth building (value versus readiness), deciding how much an agent may do on its own, evaluation and audit trails.
+- New ways of working: agents that work in the background of existing tools instead of another chat window.
+- Launching products from discovery to live: build a rough prototype, measure it, then build it properly.
+- Creative AI, planned: sound first, then short films. The house rules are already published on the site.
+
+## Point of view
+- Most AI projects fail before the model does. In his words: "The problem isn't faulty models or regulation. More often, it's the wrong approach."
+- Not every product needs AI. Start where the work hurts, then ask two questions: how much is it worth, and how ready are we to build it?
+- The best AI is the one nobody has to ask: the reply is drafted before you open the email.
+- An agent earns autonomy one rung at a time: it suggests, drafts, reconciles, then decides. Each rung needs something in place first: evals, an audit trail, a way to reverse what it posted, and a named person who signs off the result. The site has an interactive version of this, with an agent matching forty bank lines to a ledger. The data in it is invented.
+- Build a rough one, then measure it. A prototype that works tells you more than a polished deck, and the number, not the demo, wins the budget.
+
+## What he expects next (written October 2026, to be checked in a year)
+- Companies will stop counting AI pilots and start counting AI in production.
+- The agents that matter will work inside the tools people already use, not in another chat window.
+- Audit trails and evaluations will become as routine for AI as tests are for code.
+
+## Now (October 2026)
+- Day job: product manager for Cashbook at MHR, with Spyrosoft.
+- Evenings: a price-watching agent, at the contracts stage.
+- Learning: video tools, for a first short film.
+
+## Evidence
+- Payments: a card-payment gateway taken from discovery to live merchants. The client reports 99.99% uptime after launch.
+- Banking: requirements and API contracts for a global push-notification platform, through a bank's go-live checks.
+- Accounting: Cashbook at MHR (a UK accounting and payroll platform), with Spyrosoft. He defined the Open Banking approach for bank-data ingestion (research and RFI), built an LLM document-extraction prototype that reached 92% accuracy and cut processing from minutes to about thirty seconds, and an agentic prototype that matches bank records to ledger entries.
+- Earlier: a fourteen-person IT and GIS team at Wrocław's water utility. MSc in electronics and telecommunications and postgraduate business analysis, both at Wrocław University of Science and Technology. English, German, Polish.
+
+## Writing
+- [Not every product needs AI – here's how to spot the ones that do](https://spyro-soft.com/blog/artificial-intelligence-machine-learning/not-every-product-needs-ai-heres-how-to-spot-the-ones-that-do) (Spyrosoft blog, October 2025)
+- [Practical AI: where to begin and what to focus on](https://spyro-soft.com/blog/artificial-intelligence-machine-learning/practical-ai-where-to-begin-and-what-to-focus-on) (Spyrosoft blog, October 2025)
+- [The value of the discovery phase in software development](https://spyro-soft.com/blog/build-operate-transfer/the-value-of-the-discovery-phase-in-software-development) (Spyrosoft blog, January 2025)
+
+## Lab
+- [BookWorm](https://github.com/MatchYouPikchu/book-worm-recommendations): a book recommender that can't invent a book; it only recommends titles it has found in Open Library or Google Books. Working prototype.
+- [Wishlist Price Agent](https://github.com/MatchYouPikchu/Wishlist-Price-Agent): will tell you when a deal is genuinely good, not just cheaper. The contracts and the plan are built; the LLM components are not yet.
+- [Tamagotchi for words](https://github.com/MatchYouPikchu/tamagotchi-learning-languages): a virtual pet that teaches children Polish–English vocabulary. Playable.
+- [Receipts and invoices](https://github.com/MatchYouPikchu/DocumentExtraction): experiments in pulling structured fields out of receipts, invoices and ID cards.
+
+## Contact
+- LinkedIn: https://www.linkedin.com/in/maciej-wawruszczak-432402b6/
+- GitHub: https://github.com/MatchYouPikchu

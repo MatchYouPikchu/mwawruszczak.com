@@ -1,0 +1,294 @@
+/* ---------------------------------------------------------------
+   The trust ladder: how much should an agent do on its own?
+   Reconciliation figure. Uses only tokens from site.css :root.
+   --------------------------------------------------------------- */
+
+.lad-sub{
+  margin:-4px 0 0;
+  font:italic 400 clamp(20px,1.9vw,25px)/1.3 var(--serif);
+  color:var(--ink-2);
+  max-width:24em;
+}
+.sec-head .lad-sub+.sec-lede{margin-top:4px}
+
+.lad{margin-top:clamp(6px,1.4vw,18px)}
+
+/* ---------- the four rungs ---------- */
+.lad-rungs{
+  border:0;margin:0;padding:0;min-width:0;
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+}
+.lad-rung{display:block;position:relative;min-width:0;cursor:pointer}
+.lad-rung input{position:absolute;width:1px;height:1px;opacity:0;margin:0;pointer-events:none}
+
+.lad-face{
+  display:grid;grid-template-rows:auto auto 1fr auto;gap:7px;height:100%;
+  padding:16px 24px 18px 0;
+  border-top:2px solid var(--rule);
+  color:var(--ink-2);
+  transition:border-color .3s var(--ease),color .3s var(--ease);
+}
+.lad-rung+.lad-rung .lad-face{border-left:1px solid var(--rule);padding-left:24px}
+.lad-rung:hover .lad-face{border-top-color:var(--rule-2)}
+.lad-rung input:checked+.lad-face{border-top-color:var(--flag);color:var(--paper)}
+.lad-rung input:focus-visible+.lad-face{outline:2px solid var(--flag);outline-offset:3px;border-radius:3px}
+
+.lad-n{font:400 11.5px/1 var(--mono);color:var(--ink-3);letter-spacing:.06em}
+.lad-name{font:500 clamp(22px,2vw,27px)/1.05 var(--serif);color:currentColor;letter-spacing:-.01em}
+.lad-rung input:checked+.lad-face .lad-name{color:var(--paper)}
+.lad-desc{font-size:15px;line-height:1.45;color:var(--ink-2);text-wrap:pretty}
+.lad-gate{
+  margin-top:3px;padding-top:11px;border-top:1px solid var(--rule);
+  font-size:13.5px;line-height:1.5;color:var(--ink-2);text-wrap:pretty;
+}
+.lad-gate i{font:italic 400 14.5px/1 var(--serif);color:var(--paper);opacity:.9}
+
+/* without JavaScript the rungs are prose, not a live control */
+.lad:not(.is-live) .lad-rung{cursor:default}
+.lad:not(.is-live) .lad-rung input:checked+.lad-face{border-top-color:var(--rule);color:var(--ink-2)}
+.lad:not(.is-live) .lad-rung input:checked+.lad-face .lad-name{color:var(--ink-2)}
+
+/* ---------- the quiet provenance line ---------- */
+.lad-note{
+  margin:22px 0 0;max-width:44em;
+  font-size:14.5px;line-height:1.6;color:var(--ink-2);
+}
+.lad-note a{color:var(--paper);text-decoration-color:var(--rule-2)}
+.lad-note a:hover{text-decoration-color:var(--flag)}
+
+/* ---------- the threshold ---------- */
+.lad .lad-thr{display:none}
+.lad.is-live .lad-thr{
+  display:flex;align-items:center;gap:clamp(14px,2vw,28px);flex-wrap:wrap;
+  margin:clamp(22px,2.6vw,34px) 0 0;min-height:30px;
+  visibility:hidden;
+}
+.lad.is-live.at-reconciles .lad-thr{visibility:visible}
+.lad-thr label{font-size:15px;color:var(--ink-2);white-space:nowrap}
+.lad-thr output{
+  color:var(--paper);font-weight:600;font-variant-numeric:tabular-nums;
+  min-width:2.2ch;display:inline-block;text-align:right;
+}
+
+.lad-thr input[type=range]{
+  -webkit-appearance:none;appearance:none;
+  width:clamp(180px,24vw,300px);height:22px;margin:0;
+  background:transparent;cursor:pointer;
+}
+.lad-thr input[type=range]{--p:75%}
+.lad-thr input[type=range]::-webkit-slider-runnable-track{
+  height:2px;border-radius:2px;
+  background:linear-gradient(90deg,var(--rule-2) 0 var(--p),
+    color-mix(in oklab,var(--ok) 70%,transparent) var(--p) 100%);
+}
+.lad-thr input[type=range]::-moz-range-track{
+  height:2px;border-radius:2px;
+  background:linear-gradient(90deg,var(--rule-2) 0 var(--p),
+    color-mix(in oklab,var(--ok) 70%,transparent) var(--p) 100%);
+}
+.lad-thr input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:15px;height:15px;margin-top:-6.5px;border-radius:50%;
+  background:var(--paper);border:0;
+  box-shadow:0 0 0 1px var(--night),0 2px 8px rgba(0,0,0,.5);
+  transition:transform .2s var(--ease);
+}
+.lad-thr input[type=range]::-moz-range-thumb{
+  width:15px;height:15px;border-radius:50%;background:var(--paper);border:0;
+  box-shadow:0 0 0 1px var(--night),0 2px 8px rgba(0,0,0,.5);
+}
+.lad-thr input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.14)}
+.lad-thr input[type=range]:focus-visible{outline:none}
+.lad-thr input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--night),0 0 0 4px var(--flag)}
+.lad-thr input[type=range]:focus-visible::-moz-range-thumb{box-shadow:0 0 0 2px var(--night),0 0 0 4px var(--flag)}
+
+/* ---------- figure, readouts, detail, key ---------- */
+.lad-fig{margin:clamp(18px,2.4vw,30px) 0 0}
+.lad-stage{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) clamp(200px,20vw,248px);
+  grid-template-areas:
+    "plot   side"
+    "plot   key"
+    "plot   fill"
+    "detail fill";
+  grid-template-rows:auto auto minmax(0,1fr) auto;
+  column-gap:clamp(26px,3.6vw,56px);
+  align-items:start;
+}
+.lad-plot{grid-area:plot;position:relative;min-width:0}
+.lad-fallback{
+  margin:0;padding:34px 0 0;max-width:34em;
+  color:var(--ink-2);font-size:16.5px;text-wrap:pretty;
+  border-top:1px solid var(--rule);
+}
+.lad-fallback-fine{margin:10px 0 28px;color:var(--ink-2)}
+
+.lad-svg{display:block;width:100%;height:auto;overflow:visible}
+.lad-colh{font:italic 400 14.5px/1 var(--serif);fill:var(--ink-2)}
+.lad-crule{stroke:var(--rule);stroke-width:1}
+.lad-crule-b{stroke:var(--rule)}
+
+.lad-ln{
+  fill:none;stroke-linecap:round;
+  transition:stroke .35s var(--ease),stroke-width .35s var(--ease),
+             opacity .35s var(--ease),stroke-dasharray .35s var(--ease);
+}
+.lad-ln.is-sugg{stroke:var(--ink-2);stroke-width:1;opacity:.56;stroke-dasharray:2 3.4}
+.lad-ln.is-wait{stroke:var(--wait);stroke-width:1.05;opacity:.72;stroke-dasharray:3 4}
+.lad-ln.is-ok{stroke:var(--ok);stroke-width:1.1;opacity:.74;stroke-dasharray:12 0}
+.lad-ln.is-wrong{stroke:var(--wrong);stroke-width:1.9;opacity:.96;stroke-dasharray:12 0}
+
+.lad-dot{
+  stroke:none;
+  transition:fill .35s var(--ease),opacity .35s var(--ease),stroke .35s var(--ease);
+}
+.lad-dot.is-sugg{fill:var(--ink-2);opacity:.62}
+.lad-dot.is-wait{fill:var(--wait);opacity:.85}
+.lad-dot.is-ok{fill:var(--ok);opacity:.88}
+.lad-dot.is-wrong{fill:var(--wrong);opacity:1}
+.lad-dot.is-none{fill:none;stroke:var(--ink-2);stroke-width:1;opacity:.55}
+
+/* a row band for every line, the full width of the plate, plus a fat
+   transparent stroke on each curve out in the middle */
+.lad-hit{fill:transparent;pointer-events:all;outline:none}
+.lad-hit:focus-visible{
+  stroke:var(--flag);stroke-width:1;
+  fill:color-mix(in oklab,var(--flag) 6%,transparent);
+}
+.lad-hitln{fill:none;stroke:transparent;stroke-width:9;pointer-events:stroke}
+
+/* where a wrong match should have gone */
+.lad-hint{
+  fill:none;stroke:var(--paper);stroke-width:1;stroke-dasharray:1 4;stroke-linecap:round;
+  opacity:0;transition:opacity .25s var(--ease);
+}
+.lad-hint.is-on{opacity:.45}
+.lad-ring{fill:none;stroke:var(--paper);stroke-width:1;opacity:0;transition:opacity .25s var(--ease)}
+.lad-ring.is-on{opacity:.6}
+
+/* one line singled out: the rest stay as context, dimmed but legible */
+.lad-svg.is-picking .lad-ln{opacity:.22}
+.lad-svg.is-picking .lad-dot{opacity:.26}
+.lad-svg.is-picking .lad-ln.is-on{opacity:1}
+.lad-svg.is-picking .lad-dot.is-on{opacity:1}
+
+/* ---------- readouts ---------- */
+.lad .lad-side{display:none}
+.lad.is-live .lad-side{display:block;grid-area:side;padding-top:28px}
+.lad-read{margin:0}
+.lad-ro{padding:0 0 16px;border-top:1px solid var(--rule);padding-top:14px}
+.lad-ro:first-child{border-top-color:var(--rule-2)}
+.lad-ro dt{font-size:13.5px;line-height:1.4;color:var(--ink-2)}
+.lad-ro dd{margin:5px 0 0;display:flex;align-items:baseline;gap:7px}
+.lad-ro b{
+  font:500 clamp(30px,2.8vw,40px)/1 var(--sans);
+  font-variant-numeric:tabular-nums;letter-spacing:-.015em;
+}
+.lad-ro span{font-size:14.5px;color:var(--ink-2)}
+.lad-ro-wait b{color:var(--wait)}
+.lad-ro-wrong b{color:var(--wrong)}
+.lad-ro.is-zero b{color:var(--ink-2)}
+
+.lad-time{
+  margin:0;padding-top:13px;border-top:1px solid var(--rule);
+  font-size:13.5px;line-height:1.5;color:var(--ink-2);
+}
+
+/* ---------- the line you are pointing at, in a slot of its own ---------- */
+.lad .lad-detail{display:none}
+.lad.is-live .lad-detail{
+  display:flex;flex-direction:column;justify-content:center;
+  grid-area:detail;
+  margin-top:clamp(20px,2.2vw,28px);padding-top:15px;
+  border-top:1px solid var(--rule);
+  min-height:112px;max-width:58em;
+}
+.lad-detail-hint{margin:0;font-size:14.5px;line-height:1.5;color:var(--ink-2);max-width:32em}
+.lad-detail .d-bank{
+  margin:0;font:400 12.5px/1.45 var(--mono);color:var(--paper);
+  word-break:break-word;
+}
+.lad-detail .d-led{margin:7px 0 0;font-size:15.5px;line-height:1.45;color:var(--paper);text-wrap:pretty}
+.lad-detail .d-arrow{color:var(--ink-2);margin-right:8px}
+.lad-detail .d-conf{color:var(--ink-2);font-size:14px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.lad-detail .d-conf::before{content:'·';margin:0 .5em 0 .35em;color:var(--ink-3)}
+.lad-detail .d-conf b{color:var(--paper);font-weight:600}
+.lad-detail .d-state{margin:8px 0 0;font-size:14px;line-height:1.45;color:var(--ink-2);text-wrap:pretty}
+.lad-detail.s-ok .d-state{color:var(--ok)}
+.lad-detail.s-wrong .d-state{color:var(--wrong)}
+.lad-detail.s-wait .d-state{color:var(--wait)}
+
+/* ---------- key ---------- */
+.lad .lad-key{display:none}
+.lad.is-live .lad-key{
+  display:grid;grid-area:key;list-style:none;
+  margin:clamp(20px,2.2vw,28px) 0 0;padding:15px 0 0;
+  border-top:1px solid var(--rule);
+  gap:9px;
+}
+.lad-key li{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--ink-2)}
+.lad-key svg{flex:none;overflow:visible}
+.lad-key .lad-ln.is-sugg{opacity:.75}
+.lad-key .lad-ln.is-wait{opacity:.9}
+.lad-key .lad-dot.is-none{opacity:.72}
+
+/* ---------- caption ---------- */
+.lad-cap{margin:clamp(22px,2.6vw,32px) 0 0;max-width:46rem}
+.lad-cap .fine{margin:0;color:var(--ink-2)}
+.lad-quip{
+  margin:5px 0 0;
+  font:italic 400 clamp(18px,1.6vw,21px)/1.35 var(--serif);
+  color:var(--paper);
+}
+
+/* ---------- tablet ---------- */
+@media (max-width:1000px){
+  .lad-face{padding-right:18px}
+  .lad-rung+.lad-rung .lad-face{padding-left:18px}
+  .lad-stage{grid-template-columns:minmax(0,1fr) clamp(180px,22vw,220px);column-gap:28px}
+}
+
+/* ---------- one column: the readouts come up next to the controls ---------- */
+@media (max-width:860px){
+  .lad-stage{display:flex;flex-direction:column;align-items:stretch}
+  .lad.is-live .lad-side{order:-1;padding-top:20px;padding-bottom:18px}
+  .lad-plot{order:0}
+  .lad.is-live .lad-detail{order:1;max-width:none}
+  .lad.is-live .lad-key{order:2;margin-top:20px;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:20px}
+  .lad-key li:last-child{grid-column:1/-1}
+  .lad-read{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px}
+  .lad-ro{padding-bottom:13px}
+  .lad-time{margin-top:0}
+}
+
+/* ---------- phone: the ladder becomes a list ---------- */
+@media (max-width:720px){
+  .lad-rungs{grid-template-columns:minmax(0,1fr)}
+  .lad-face{
+    padding:15px 0 17px 16px;
+    border-top:1px solid var(--rule);
+    gap:6px;
+  }
+  .lad-rung+.lad-rung .lad-face{border-left:0;padding-left:16px}
+  .lad-rung input:checked+.lad-face{
+    border-top-color:var(--rule);
+    box-shadow:inset 2px 0 0 var(--flag);
+  }
+  .lad:not(.is-live) .lad-rung input:checked+.lad-face{box-shadow:none}
+  .lad-name{font-size:23px}
+  .lad-n{display:none}
+  .lad-gate{margin-top:2px;padding-top:9px}
+  .lad-note{margin-top:18px;font-size:14px}
+
+  /* no reserved blank slot on a small screen: the control is simply absent */
+  .lad.is-live .lad-thr{gap:10px;margin-top:24px;min-height:0}
+  .lad.is-live:not(.at-reconciles) .lad-thr{display:none}
+  .lad-thr label{white-space:normal}
+  .lad-thr input[type=range]{width:100%;height:44px}
+
+  .lad-ro b{font-size:32px}
+  .lad.is-live .lad-detail{padding-top:14px}
+  .lad-detail .d-bank{font-size:11.5px}
+  .lad-detail .d-led{font-size:15px}
+}

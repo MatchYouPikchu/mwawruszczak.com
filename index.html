@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Maciej Wawruszczak</title>
+<meta name="description" content="Maciej Wawruszczak helps companies choose the AI worth building, prove that it works, and ship it safely. Product lead in Wrocław and Warsaw.">
+<meta name="theme-color" content="#081416">
+<link rel="canonical" href="https://mwawruszczak.com/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/assets/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/assets/img/icon-180.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Maciej Wawruszczak">
+<meta property="og:description" content="Most AI projects fail before the model does. Maciej Wawruszczak helps companies choose, prove and safely ship the AI worth building.">
+<meta property="og:url" content="https://mwawruszczak.com/">
+<meta property="og:image" content="https://mwawruszczak.com/assets/img/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Maciej Wawruszczak. Most AI projects fail before the model does. An imagined night relief map with glowing contour lines and the river Odra.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="/assets/fonts/poltawski-nowy-normal-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/hanken-grotesk-normal-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/poltawski-nowy-italic-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/fonts/fonts.css">
+<link rel="stylesheet" href="/assets/css/site.css">
+<link rel="stylesheet" href="/assets/css/recon.css">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Person","name":"Maciej Wawruszczak","url":"https://mwawruszczak.com/","jobTitle":"Senior Technical Product Manager","homeLocation":{"@type":"Place","name":"Wrocław, Poland"},"knowsLanguage":["en","de","pl"],"sameAs":["https://www.linkedin.com/in/maciej-wawruszczak-432402b6/","https://github.com/MatchYouPikchu"]}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="dawnsky" aria-hidden="true"></div>
+<canvas id="world" aria-hidden="true"></canvas>
+<div id="labels" aria-hidden="true"></div>
+
+<header class="bar" id="bar">
+  <a class="brand" href="#top" aria-label="Maciej Wawruszczak, back to top">
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 14V2.6h9.4L10 6l2.4 3.4H3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+    <span>Maciej Wawruszczak</span>
+  </a>
+  <nav aria-label="Sections">
+    <a href="#think">How I think</a>
+    <a href="#experiment">Experiment</a>
+    <a href="#notes">Notes</a>
+    <a href="#lab">Lab</a>
+    <a href="#studio">Studio</a>
+    <a href="#about">About</a>
+    <a class="ext" href="https://www.linkedin.com/in/maciej-wawruszczak-432402b6/" rel="me noopener" target="_blank">LinkedIn</a>
+  </nav>
+  <button class="menu-btn" id="menu-btn" type="button" aria-expanded="false" aria-controls="menu-sheet">Menu</button>
+  <button class="sound" id="sound" type="button" aria-pressed="false" title="Turn the sound of the map on or off">
+    <span class="orb" aria-hidden="true"></span><span class="sound-label">Sound off</span>
+  </button>
+</header>
+<nav class="menu-sheet" id="menu-sheet" aria-label="Sections" hidden>
+  <a href="#think">How I think</a>
+  <a href="#experiment">Experiment</a>
+  <a href="#notes">Notes</a>
+  <a href="#lab">Lab</a>
+  <a href="#studio">Studio</a>
+  <a href="#about">About</a>
+  <a href="#contact">Contact</a>
+  <a href="https://www.linkedin.com/in/maciej-wawruszczak-432402b6/" rel="me noopener" target="_blank">LinkedIn <span aria-hidden="true">↗</span></a>
+</nav>
+
+<main id="main" tabindex="-1">
+
+<!-- ============ THE MAP ============ -->
+<section class="flight" id="top" aria-label="Introduction and how I think">
+
+  <div class="stop stop-hero" data-stop="0">
+    <div class="panel hero-panel">
+      <h1 class="name">Maciej Wawruszczak</h1>
+      <p class="claim" id="claim">Most AI projects fail before the model does.</p>
+      <p class="lede">I'm a product lead in <span lang="pl">Wrocław</span> and Warsaw. I help companies choose the AI worth building, prove that it works, and put it to work safely, mostly where money moves and the rules are strict.</p>
+      <div class="ctas">
+        <a class="btn primary" href="#think">How I think</a>
+        <a class="btn" href="https://www.linkedin.com/in/maciej-wawruszczak-432402b6/" rel="me noopener" target="_blank">Message me on LinkedIn <span aria-hidden="true">↗</span></a>
+      </div>
+    </div>
+    <p class="legend"><span class="legend-mark" aria-hidden="true"></span><span>On this map, height is value and distance is readiness.<small>The land is imagined. <span lang="pl">Wrocław</span> and the <span lang="pl">Odra</span> are real.</small></span></p>
+    <p class="scroll-hint" aria-hidden="true"><span></span>Scroll to cross the map</p>
+  </div>
+
+  <div class="stop" data-stop="1" id="think">
+    <article class="panel">
+      <p class="count"><span>1</span> of 4</p>
+      <h2>Not every product needs AI.</h2>
+      <p>Start where the work hurts, then ask two questions: how much is it worth, and how ready are we to build it? The near peak, ready now, is where to begin. The far one is the big bet: worth more, and a longer walk.</p>
+      <blockquote class="quote"><p>“We can't get a brand-new Mercedes in here when we have bicycles over there.”</p><footer>A client, during a discovery project. From my note <a href="https://spyro-soft.com/blog/build-operate-transfer/the-value-of-the-discovery-phase-in-software-development" target="_blank" rel="noopener">The value of the discovery phase</a></footer></blockquote>
+      <a class="source" href="https://spyro-soft.com/blog/artificial-intelligence-machine-learning/not-every-product-needs-ai-heres-how-to-spot-the-ones-that-do" target="_blank" rel="noopener">From my note: Not every product needs AI <span aria-hidden="true">↗</span></a>
+    </article>
+  </div>
+
+  <div class="stop" data-stop="2" id="agents">
+    <article class="panel">
+      <p class="count"><span>2</span> of 4</p>
+      <h2>The best AI is the one nobody has to ask.</h2>
+      <p>When people have to open a new app and type a prompt, adoption stalls. The agents that change how a company works run in the background: the reply is drafted before you open the email.</p>
+      <a class="source" href="#experiment">How much should they do on their own? Try the ladder <span aria-hidden="true">↓</span></a>
+    </article>
+  </div>
+
+  <div class="stop" data-stop="3" id="measure">
+    <article class="panel">
+      <p class="count"><span>3</span> of 4</p>
+      <h2>Build a rough one, then measure it.</h2>
+      <p>Discovery, a rough prototype, a measurement, then live. A prototype that works tells you more than a polished deck. My document-extraction prototype at MHR reached 92% accuracy and cut processing from minutes to about thirty seconds, and the number, not the demo, won the budget to build it properly.</p>
+      <a class="source" href="#lab">More things I've built <span aria-hidden="true">↓</span></a>
+    </article>
+  </div>
+
+  <div class="stop" data-stop="4" id="next">
+    <article class="panel">
+      <p class="count"><span>4</span> of 4</p>
+      <h2>What I think happens next.</h2>
+      <ol class="calls">
+        <li>Companies will stop counting AI pilots and start counting AI in production.</li>
+        <li>The agents that matter will work inside the tools people already use, not in another chat window.</li>
+        <li>Audit trails and evaluations will become as routine for AI as tests are for code.</li>
+      </ol>
+      <p class="signed">Written in October 2026. I'll check them in a year.</p>
+    </article>
+  </div>
+
+  <nav class="route" aria-label="Map stops">
+    <a href="#top" data-go="0"><span>Start</span></a>
+    <a href="#think" data-go="1"><span>Value and readiness</span></a>
+    <a href="#agents" data-go="2"><span>Background agents</span></a>
+    <a href="#measure" data-go="3"><span>Build, then measure</span></a>
+    <a href="#next" data-go="4"><span>What happens next</span></a>
+  </nav>
+</section>
+
+<section class="sheet now-sheet" aria-label="What I'm doing now">
+  <div class="wrap">
+    <div class="now">
+      <p class="now-head"><span>Now</span><time datetime="2026-10">October 2026</time></p>
+      <dl>
+        <div><dt>Day job</dt><dd>Product manager for Cashbook at MHR, with Spyrosoft.</dd></div>
+        <div><dt>Evenings</dt><dd>A price-watching agent, at the contracts stage.</dd></div>
+        <div><dt>Learning</dt><dd>Video tools, for a first short film.</dd></div>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<!-- EXPERIMENT START -->
+<section class="sheet" id="experiment" aria-labelledby="exp-h">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="kicker">An experiment</p>
+      <h2 id="exp-h">How much should an agent do on its own?</h2>
+      <p class="lad-sub">Four rungs. Each one has to be earned.</p>
+      <p class="sec-lede">Month end. Forty bank lines have to be matched against the ledger. An agent proposes a match for each one and says how sure it is. Choose how far up the ladder it may go.</p>
+    </header>
+
+    <div class="lad" id="lad">
+
+      <fieldset class="lad-rungs">
+        <legend class="sr">How far up the ladder the agent may go</legend>
+
+        <label class="lad-rung">
+          <input type="radio" name="lad-rung" value="suggests">
+          <span class="lad-face">
+            <span class="lad-n" aria-hidden="true">01</span>
+            <span class="lad-name">Suggests</span>
+            <span class="lad-desc">The agent proposes matches; a person makes every decision.</span>
+            <span class="lad-gate"><i>Needs:</i> evals, so the suggestions are worth reading.</span>
+          </span>
+        </label>
+
+        <label class="lad-rung">
+          <input type="radio" name="lad-rung" value="drafts">
+          <span class="lad-face">
+            <span class="lad-n" aria-hidden="true">02</span>
+            <span class="lad-name">Drafts</span>
+            <span class="lad-desc">The agent prepares each match; a person confirms it with one click.</span>
+            <span class="lad-gate"><i>Needs:</i> an audit trail, and somewhere for drafts to wait.</span>
+          </span>
+        </label>
+
+        <label class="lad-rung">
+          <input type="radio" name="lad-rung" value="reconciles" checked>
+          <span class="lad-face">
+            <span class="lad-n" aria-hidden="true">03</span>
+            <span class="lad-name">Reconciles</span>
+            <span class="lad-desc">The agent posts the matches it is sure about; a person checks the rest.</span>
+            <span class="lad-gate"><i>Needs:</i> a way to reverse what it posted.</span>
+          </span>
+        </label>
+
+        <label class="lad-rung">
+          <input type="radio" name="lad-rung" value="decides">
+          <span class="lad-face">
+            <span class="lad-n" aria-hidden="true">04</span>
+            <span class="lad-name">Decides</span>
+            <span class="lad-desc">The agent posts everything, including the hard cases.</span>
+            <span class="lad-gate"><i>Needs:</i> a named person who signs off the result.</span>
+          </span>
+        </label>
+      </fieldset>
+
+      <p class="lad-note">The ladder extends the human-in-the-loop spectrum from my note <a href="https://spyro-soft.com/blog/artificial-intelligence-machine-learning/practical-ai-where-to-begin-and-what-to-focus-on" target="_blank" rel="noopener">Practical AI</a>: advisory only, AI-assisted draft, fully automated.</p>
+
+      <div class="lad-thr" id="lad-thr">
+        <label for="lad-thr-input">Post on its own when at least <output for="lad-thr-input" id="lad-thr-out" aria-live="off">90</output>% sure</label>
+        <input type="range" id="lad-thr-input" min="60" max="99" step="1" value="90" aria-valuetext="90 percent">
+      </div>
+
+      <figure class="lad-fig">
+        <div class="lad-stage">
+          <div class="lad-plot" id="lad-plot">
+            <p class="lad-fallback">Let the agent post more on its own and fewer lines reach a person, but a wrong match can go through unnoticed. Hold it back and nothing is posted without someone looking, at the cost of an afternoon.</p>
+            <p class="fine lad-fallback-fine">The figure that lets you move between the two needs JavaScript.</p>
+          </div>
+          <div class="lad-side" id="lad-side">
+            <dl class="lad-read">
+              <div class="lad-ro lad-ro-wait">
+                <dt>A person still checks</dt>
+                <dd><b id="lad-ro-wait">13</b> <span>lines</span></dd>
+              </div>
+              <div class="lad-ro lad-ro-wrong">
+                <dt>Wrong matches approved</dt>
+                <dd><b id="lad-ro-wrong">1</b></dd>
+              </div>
+            </dl>
+            <p class="lad-time" id="lad-ro-time">Time spent checking: about 26 min</p>
+          </div>
+          <div class="lad-detail" id="lad-detail" aria-hidden="true">
+            <p class="lad-detail-hint" id="lad-detail-hint">Point at a line to see what the agent proposed, and whether it was right.</p>
+            <div class="lad-detail-body" id="lad-detail-body" hidden>
+              <p class="d-bank" id="lad-d-bank"></p>
+              <p class="d-led"><span class="d-arrow">&#8594;</span><span id="lad-d-led"></span><span class="d-conf">Confidence <b id="lad-d-conf"></b></span></p>
+              <p class="d-state" id="lad-d-state"></p>
+            </div>
+          </div>
+          <ul class="lad-key">
+            <li><svg viewBox="0 0 24 8" width="24" height="8" aria-hidden="true"><path class="lad-ln is-ok" d="M1 4h22"/></svg><span>Posted by the agent</span></li>
+            <li><svg viewBox="0 0 24 8" width="24" height="8" aria-hidden="true"><path class="lad-ln is-wrong" d="M1 4h22"/></svg><span>Posted, but wrong</span></li>
+            <li><svg viewBox="0 0 24 8" width="24" height="8" aria-hidden="true"><path class="lad-ln is-wait" d="M1 4h22"/></svg><span>Waiting for a person</span></li>
+            <li><svg viewBox="0 0 24 8" width="24" height="8" aria-hidden="true"><path class="lad-ln is-sugg" d="M1 4h22"/></svg><span>Suggestion only</span></li>
+            <li><svg viewBox="0 0 24 8" width="24" height="8" aria-hidden="true"><circle class="lad-dot is-none" cx="12" cy="4" r="3"/></svg><span>Ledger entry left unmatched</span></li>
+          </ul>
+        </div>
+        <figcaption class="lad-cap">
+          <p class="fine">Invented data. The trade-off is not.</p>
+          <p class="lad-quip">If you can't measure it, it's a demo.</p>
+        </figcaption>
+      </figure>
+
+      <p class="sr" id="lad-live" aria-live="polite"></p>
+      <ol class="sr" id="lad-lines" aria-label="The forty bank lines and the match proposed for each one"></ol>
+    </div>
+  </div>
+</section>
+<!-- EXPERIMENT END -->
+
+<!-- ============ NOTES ============ -->
+<section class="sheet" id="notes" aria-labelledby="notes-h">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="kicker">Notes</p>
+      <h2 id="notes-h">Things I've written down.</h2>
+      <p class="sec-lede">Longer thoughts on choosing, building and adopting AI, first published on the Spyrosoft blog. Newer notes will land here first.</p>
+    </header>
+    <ol class="notes">
+      <li>
+        <p class="meta">October 2025, 6 min read</p>
+        <h3><a href="https://spyro-soft.com/blog/artificial-intelligence-machine-learning/not-every-product-needs-ai-heres-how-to-spot-the-ones-that-do" target="_blank" rel="noopener">Not every product needs AI – here's how to spot the ones that do</a></h3>
+        <p>A value-versus-readiness way to choose AI projects, and four common ways AI programmes go wrong.</p>
+      </li>
+      <li>
+        <p class="meta">October 2025, 4 min read</p>
+        <h3><a href="https://spyro-soft.com/blog/artificial-intelligence-machine-learning/practical-ai-where-to-begin-and-what-to-focus-on" target="_blank" rel="noopener">Practical AI: where to begin and what to focus on</a></h3>
+        <p>Where to look for friction, six building blocks to start from, and why the best agents work in the background.</p>
+      </li>
+      <li>
+        <p class="meta">January 2025, 8 min read</p>
+        <h3><a href="https://spyro-soft.com/blog/build-operate-transfer/the-value-of-the-discovery-phase-in-software-development" target="_blank" rel="noopener">The value of the discovery phase in software development</a></h3>
+        <p>Discovery as risk management: what it involves, what you get out of it, and why it keeps going after development starts.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ LAB ============ -->
+<section class="sheet" id="lab" aria-labelledby="lab-h">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="kicker">Lab</p>
+      <h2 id="lab-h">Things I build to learn.</h2>
+      <p class="sec-lede">Small products and prototypes, made in the evenings to find out what AI can really do. The code is on GitHub.</p>
+    </header>
+    <ol class="lab">
+      <li>
+        <p class="status s-proto">Working prototype</p>
+        <h3>BookWorm</h3>
+        <p class="line">A book recommender that can't invent a book.</p>
+        <p>It learns your taste from a conversation, and sharpens it if you hand over your library mid-chat: a Goodreads export, or just screenshots of your Kindle shelf. It only recommends titles it has found in Open Library or Google Books, and every shortlist ends with an honest anti-recommendation.</p>
+        <p class="stack">TypeScript · Next.js · Claude</p>
+        <a href="https://github.com/MatchYouPikchu/book-worm-recommendations" target="_blank" rel="noopener" aria-label="BookWorm code on GitHub">Code <span aria-hidden="true">↗</span></a>
+      </li>
+      <li>
+        <p class="status s-found">Foundations laid</p>
+        <h3>Wishlist Price Agent</h3>
+        <p class="line">Tells you when a deal is genuinely good, not just cheaper.</p>
+        <p>Built contracts first: a frozen data model that every part is written against, an evaluation slot waiting for each LLM component, and a step-by-step plan a coding agent can follow. The contracts and the plan are done; the model comes next.</p>
+        <p class="stack">Python · Pydantic · contracts first</p>
+        <a href="https://github.com/MatchYouPikchu/Wishlist-Price-Agent" target="_blank" rel="noopener" aria-label="Wishlist Price Agent code on GitHub">Code <span aria-hidden="true">↗</span></a>
+      </li>
+      <li>
+        <p class="status s-play">Playable</p>
+        <h3>Tamagotchi for words</h3>
+        <p class="line">A virtual pet that teaches children Polish–English vocabulary.</p>
+        <p>Twelve-minute sessions, four learning games, spaced repetition with Leitner boxes, ninety-odd words across three levels, and every graphic drawn in code.</p>
+        <p class="stack">Python · pygame</p>
+        <a href="https://github.com/MatchYouPikchu/tamagotchi-learning-languages" target="_blank" rel="noopener" aria-label="Tamagotchi for words code on GitHub">Code <span aria-hidden="true">↗</span></a>
+      </li>
+      <li>
+        <p class="status s-exp">Experiments</p>
+        <h3>Receipts and invoices</h3>
+        <p class="line">Structured fields out of messy paperwork.</p>
+        <p>An experiment in reading receipts, invoices and ID cards: recognise the text, work out what kind of document it is, then pull out the fields with a language model.</p>
+        <p class="stack">Python · Streamlit · Gemini · Cloud Vision</p>
+        <a href="https://github.com/MatchYouPikchu/DocumentExtraction" target="_blank" rel="noopener" aria-label="Receipts and invoices code on GitHub">Code <span aria-hidden="true">↗</span></a>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ STUDIO ============ -->
+<section class="sheet" id="studio" aria-labelledby="studio-h">
+  <div class="wrap studio">
+    <header class="sec-head">
+      <p class="kicker">Studio</p>
+      <h2 id="studio-h">After hours, I make things with AI.</h2>
+      <p class="sec-lede">Sound first, then short films. Nothing is ready to show yet; I'll link pieces here as they're finished. Until then, the map at the top of the page has a sound of its own, built by hand in Web Audio rather than with AI. Switch it on and scroll back up: the contour lines breathe with it.</p>
+      <div class="ctas"><button class="btn" id="play-sound" type="button" aria-pressed="false"><span class="orb" aria-hidden="true"></span><span class="sound-label">Play the sound of the map</span></button></div>
+    </header>
+    <aside class="rules" aria-label="House rules">
+      <h3>House rules</h3>
+      <ul>
+        <li>Nothing made up: every fact and number has a source.</li>
+        <li>No real person's face, and no one else's brand.</li>
+        <li>Every piece credits the tools that made it.</li>
+      </ul>
+    </aside>
+  </div>
+</section>
+
+<!-- ============ ABOUT ============ -->
+<section class="sheet" id="about" aria-labelledby="about-h">
+  <div class="wrap about">
+    <figure class="portrait">
+      <div class="photo" aria-hidden="true"></div>
+    </figure>
+    <div>
+      <header class="sec-head tight">
+        <p class="kicker">About</p>
+        <h2 id="about-h">Fifteen years, briefly.</h2>
+      </header>
+      <p class="about-lede">I started as an engineer, with a degree in electronics and telecommunications, and ran a fourteen-person IT and GIS team at <span lang="pl">Wrocław</span>'s water utility. Since then I've worked between business and engineering, as an analyst, product owner and product manager. Since 2021 I've been at Spyrosoft, leading products in payments, broadcast media and accounting.</p>
+      <ul class="receipts">
+        <li><b>Payments</b><span>A card-payment gateway taken from discovery to live merchants. The client reports 99.99% uptime after launch.</span></li>
+        <li><b>Banking</b><span>Requirements and API contracts for a global push-notification platform, through a bank's go-live checks.</span></li>
+        <li><b>Accounting</b><span>The Open Banking approach for bank data in an accounting platform's Cashbook, and an agentic prototype that matches bank records to ledger entries.</span></li>
+        <li><b>Utilities</b><span>Maps, mobile work orders and a storm-water fee platform for the city's water company.</span></li>
+      </ul>
+      <p class="more"><a href="https://www.linkedin.com/in/maciej-wawruszczak-432402b6/" target="_blank" rel="me noopener">The full history is on LinkedIn <span aria-hidden="true">↗</span></a></p>
+      <dl class="facts">
+        <div><dt>Based in</dt><dd><span lang="pl">Wrocław</span> and Warsaw, working remotely across the EU</dd></div>
+        <div><dt>Languages</dt><dd>English, German, Polish</dd></div>
+        <div><dt>Education</dt><dd>MSc Electronics and Telecommunications; postgraduate Business Analysis. Both at <span lang="pl">Wrocław</span> University of Science and Technology</dd></div>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONTACT ============ -->
+<section class="sheet contact" id="contact" aria-labelledby="contact-h">
+  <div class="wrap">
+    <h2 id="contact-h">If you're working out where AI fits, I'd like to hear about it.</h2>
+    <p>Whether it's a first use case, a pilot that won't leave the lab, or a product you want to get right, the quickest way to reach me is a message on LinkedIn.</p>
+    <div class="ctas">
+      <a class="btn primary" href="https://www.linkedin.com/in/maciej-wawruszczak-432402b6/" rel="me noopener" target="_blank">Message me on LinkedIn <span aria-hidden="true">↗</span></a>
+      <a class="btn" href="https://github.com/MatchYouPikchu" rel="me noopener" target="_blank">See my code on GitHub <span aria-hidden="true">↗</span></a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p>© 2026 Maciej Wawruszczak. Edition 1, October 2026.</p>
+    <p>No cookies, no tracking.</p>
+    <p><a href="/llms.txt">llms.txt</a> for AI agents.</p>
+    <p class="colo">Headings are set in <span lang="pl">Poltawski Nowy</span>, a revival of the typeface <span lang="pl">Adam Półtawski</span> drew in the 1920s for the Polish language. The text is Hanken Grotesk, and the small labels are Geist Mono.</p>
+  </div>
+</footer>
+
+<script src="/assets/js/site.js" defer></script>
+<script type="module" src="/assets/js/world.js"></script>
+<script type="module" src="/assets/js/recon.js"></script>
+</body>
+</html>
