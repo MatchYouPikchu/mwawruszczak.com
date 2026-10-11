@@ -1,29 +1,13 @@
 // Bakes the terrain for the map in a worker, so the page never stutters.
-// Output: an RGBA half-float texture (height, river distance, trail distance, trail arc length)
-// and a float copy of the heights for the main thread (labels, lamp, agents).
+// The land is the real Karkonosze: a Copernicus GLO-30 elevation tile, resampled to the
+// bake's own grid and encoded as a PNG (v = (metres + 100) * 10, R = v>>8, G = v&255).
+// Out: two RGBA half-float textures and a float copy of the heights for the main thread.
+//   map: R height, G distance to water, B distance to a path, A path arc length (signed)
+//   aux: R warm light (shelters), G cool light (relay, observatory), B valley glow, A water
 'use strict';
 
-const hash = (x, y, s) => {
-  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(s, 1442695041)) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967295;
-};
-const sm = t => t * t * (3 - 2 * t);
-const vnoise = (x, y, s) => {
-  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
-  const a = hash(xi, yi, s), b = hash(xi + 1, yi, s), c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s);
-  const u = sm(xf), v = sm(yf);
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-};
-const fbm = (x, y, s, o) => { let t = 0, a = .5, f = 1; for (let i = 0; i < o; i++) { t += a * vnoise(x * f, y * f, s + i); f *= 2.03; a *= .5; } return t; };
-const ridged = (x, y, s, o) => {
-  let t = 0, a = .5, f = 1, w = 1;
-  for (let i = 0; i < o; i++) { let n = 1 - Math.abs(vnoise(x * f, y * f, s + i) * 2 - 1); n *= n * w; w = Math.min(1, n * 2); t += n * a; f *= 2.1; a *= .5; }
-  return t;
-};
-const gauss = (dx, dz, s) => Math.exp(-(dx * dx + dz * dz) / (2 * s * s));
 const clamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
+const sm = t => t * t * (3 - 2 * t);
 
 // float32 -> float16 bits
 const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
@@ -40,100 +24,153 @@ function toHalf(v) {
   return bits;
 }
 
-function segDist(px, pz, ax, az, bx, bz) {
-  const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz;
-  let t = l2 > 0 ? ((px - ax) * dx + (pz - az) * dz) / l2 : 0;
-  t = t < 0 ? 0 : t > 1 ? 1 : t;
-  const qx = ax + t * dx - px, qz = az + t * dz - pz;
-  return [Math.sqrt(qx * qx + qz * qz), t];
+// --- decoding the elevation tile -------------------------------------------------
+// The bytes must arrive untouched, so the decode asks for no colour management and no
+// premultiplying. If a browser has no OffscreenCanvas in workers, the page decodes instead.
+async function pixelsOf(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('heightmap ' + res.status);
+  const bmp = await createImageBitmap(await res.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  const w = bmp.width, h = bmp.height;          // close() zeroes these, so read them first
+  const oc = new OffscreenCanvas(w, h);
+  const ctx = oc.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0);
+  const px = ctx.getImageData(0, 0, w, h).data;
+  bmp.close();
+  return { px, w, h };
 }
 
-self.onmessage = e => {
-  const { N, W, D, cx, cz, F } = e.data;
-  const heights = new Float32Array(N * N);
-  const tex = new Uint16Array(N * N * 4);
+let job = null;
 
-  // pre-measure trails (arc length per vertex)
-  const trails = F.trails.map(pts => {
-    const acc = [0];
-    for (let i = 1; i < pts.length; i++) acc.push(acc[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-    let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity;
-    for (const [x, z] of pts) { minx = Math.min(minx, x); maxx = Math.max(maxx, x); minz = Math.min(minz, z); maxz = Math.max(maxz, z); }
-    return { pts, acc, box: [minx - 4, maxx + 4, minz - 4, maxz + 4] };
-  });
-  // smooth the river polyline (Catmull-Rom) so it meanders instead of zig-zagging
-  const river = [];
-  const R0 = F.river;
-  for (let i = 0; i < R0.length - 1; i++) {
-    const p0 = R0[Math.max(0, i - 1)], p1 = R0[i], p2 = R0[i + 1], p3 = R0[Math.min(R0.length - 1, i + 2)];
-    for (let k = 0; k < 8; k++) {
-      const t = k / 8, t2 = t * t, t3 = t2 * t;
-      river.push([0, 1].map(c => .5 * ((2 * p1[c]) + (-p0[c] + p2[c]) * t + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * t2 + (-p0[c] + 3 * p1[c] - 3 * p2[c] + p3[c]) * t3)));
-    }
-  }
-  river.push(R0[R0.length - 1]);
-
-  for (let j = 0; j < N; j++) {
-    const v = (j + .5) / N, z = cz + D / 2 - v * D;
-    for (let i = 0; i < N; i++) {
-      const u = (i + .5) / N, x = cx - W / 2 + u * W;
-
-      // rolling ground, domain-warped so it never looks like noise
-      const wx = x + 7 * (fbm(x * .03 + 3.1, z * .03, 11, 3) - .5);
-      const wz = z + 7 * (fbm(x * .03, z * .03 + 7.7, 13, 3) - .5);
-      let h = 2.6 * fbm(wx * .04, wz * .04, 7, 5) + .22 * fbm(wx * .14, wz * .14, 21, 3);
-
-      // the stops
-      for (const p of F.peaks) {
-        const g = gauss(wx - p.x, wz - p.z, p.s);
-        if (g > .002) h += p.a * g * (p.base + p.rough * ridged(wx * p.f + p.x, wz * p.f + p.z, 31 + p.seed, 5));
-      }
-      // friction: broken, rough ground
-      const fr = gauss(x - F.friction.x, z - F.friction.z, F.friction.s);
-      if (fr > .002) h += fr * F.friction.a * ridged(x * .26, z * .26, 57, 5) + fr * .8 * fbm(x * .6, z * .6, 61, 3);
-      // the plateau: a table mountain with a worn top, sheer walls cut by gullies and scree at the foot
-      // (wall steepness varies around the rim, so the contours on it never stack as copies of one shape)
-      const md = Math.hypot((x - F.mesa.x) / F.mesa.rx, (z - F.mesa.z) / F.mesa.rz) + .32 * (fbm(x * .16, z * .16, 91, 3) - .5);
-      const steep = .16 + .34 * fbm(x * .21 + 4.2, z * .21, 97, 2), gully = .16 * (fbm(x * .55, z * .55, 95, 3) - .5);
-      const wall = 1 - sm(clamp01((md + gully * .5 - .74) / steep)), scree = 1 - sm(clamp01((md + gully - .74) / 1.05));
-      const mesa = .72 * wall + .28 * scree;
-      h = h * (1 - mesa * .65) + mesa * (F.mesa.h + .35 * fbm(x * .3, z * .3, 71, 3));
-      // far range on the horizon
-      const far = sm(clamp01((-z - F.far.z0) / F.far.span));
-      if (far > 0) h += far * F.far.a * ridged(wx * .05, wz * .05, 81, 6);
-
-      // river valley
-      let rd = 1e9;
-      for (let k = 0; k < river.length - 1; k++) {
-        const [d] = segDist(x, z, river[k][0], river[k][1], river[k + 1][0], river[k + 1][1]);
-        if (d < rd) rd = d;
-      }
-      const carve = Math.exp(-(rd * rd) / (2 * 3.2 * 3.2));
-      h = h * (1 - carve * .8) - carve * .2;
-
-      // trails: distance and arc length
-      let td = 1e9, ta = 0;
-      for (const t of trails) {
-        if (x < t.box[0] || x > t.box[1] || z < t.box[2] || z > t.box[3]) continue;
-        for (let k = 0; k < t.pts.length - 1; k++) {
-          const [d, s] = segDist(x, z, t.pts[k][0], t.pts[k][1], t.pts[k + 1][0], t.pts[k + 1][1]);
-          if (d < td) { td = d; ta = t.acc[k] + s * (t.acc[k + 1] - t.acc[k]); }
-        }
-      }
-
-      // fade to calm ground at the edges of the world
-      const edge = Math.min(u, 1 - u, v, 1 - v);
-      h *= sm(clamp01(edge / .08));
-
-      h *= 1.3;
-      const idx = j * N + i;
-      heights[idx] = h;
-      const o = idx * 4;
-      tex[o] = toHalf(h);
-      tex[o + 1] = toHalf(Math.min(rd, 60));
-      tex[o + 2] = toHalf(Math.min(td, 60));
-      tex[o + 3] = toHalf(ta);
-    }
-  }
-  self.postMessage({ heights, tex }, [heights.buffer, tex.buffer]);
+const run = (px, w, h) => {
+  try { bake(job, px, w, h); }
+  catch (err) { self.postMessage({ failed: String(err) }); }
 };
+self.onmessage = async e => {
+  if (e.data.pixels) { run(e.data.pixels, e.data.w, e.data.h); return; }
+  job = e.data;
+  let got;
+  try { got = await pixelsOf(job.hm); }
+  catch (err) {
+    if (typeof OffscreenCanvas === 'undefined') { self.postMessage({ needPixels: 1 }); return; }
+    self.postMessage({ failed: String(err) }); return;
+  }
+  run(got.px, got.w, got.h);
+};
+
+function bake({ N, W, D, cx, cz, F }, px, pw, ph) {
+  const n2 = N * N;
+  const x0 = cx - W / 2, z0 = cz + D / 2, sx = W / N, sz = D / N;     // cell (i,j) centre: x0+(i+.5)sx, z0-(j+.5)sz
+  const X = i => x0 + (i + .5) * sx, Z = j => z0 - (j + .5) * sz;
+  const CI = x => (x - x0) / sx - .5, CJ = z => (z0 - z) / sz - .5;   // inverse, in cell units
+  const REF = F.meta.scale.ref, K = F.meta.scale.k;
+
+  // ---- elevation, in metres ----
+  const el = new Float32Array(n2);
+  if (!(pw > 0) || !(ph > 0)) throw new Error('empty heightmap');
+  if (pw !== N || ph !== N) {   // only if a resampled tile ever has to stand in
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const o = ((Math.min(ph - 1, Math.round(j * ph / N)) * pw) + Math.min(pw - 1, Math.round(i * pw / N))) * 4;
+      el[j * N + i] = ((px[o] << 8) | px[o + 1]) / 10 - 100;
+    }
+  } else {
+    for (let k = 0, o = 0; k < n2; k++, o += 4) el[k] = ((px[o] << 8) | px[o + 1]) / 10 - 100;
+  }
+
+  // ---- the forest belt, lightly smoothed ----
+  // It is a surface model, so below the treeline the contours are drawing the canopy. A
+  // 1-2-1 blur, faded out above 1300 m, takes the fuzz off without touching the cirques.
+  const tmp = new Float32Array(n2), kw = new Float32Array(n2);
+  for (let k = 0; k < n2; k++) kw[k] = .34 * (1 - sm(clamp01((el[k] - 1180) / 160)));
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const k = j * N + i, a = el[k - (i > 0 ? 1 : 0)], b = el[k + (i < N - 1 ? 1 : 0)];
+    tmp[k] = (a + 2 * el[k] + b) * .25;
+  }
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const k = j * N + i, a = tmp[k - (j > 0 ? N : 0)], b = tmp[k + (j < N - 1 ? N : 0)];
+    el[k] += ((a + 2 * tmp[k] + b) * .25 - el[k]) * kw[k];
+  }
+
+  // ---- the water: real outlines, filled and levelled ----
+  const wat = new Float32Array(n2);           // coverage, 0..1
+  const levels = [];                          // each lake's surface, in world units
+  const SUB = [[-.3, -.3], [.3, -.3], [-.3, .3], [.3, .3], [0, 0]];
+  for (const lake of F.lakes) {
+    const o = lake.o;
+    let ax = 1e9, bx = -1e9, az = 1e9, bz = -1e9;
+    for (const [x, z] of o) { ax = Math.min(ax, x); bx = Math.max(bx, x); az = Math.min(az, z); bz = Math.max(bz, z); }
+    const i0 = Math.max(0, Math.floor(CI(ax) - 1)), i1 = Math.min(N - 1, Math.ceil(CI(bx) + 1));
+    const j0 = Math.max(0, Math.floor(CJ(bz) - 1)), j1 = Math.min(N - 1, Math.ceil(CJ(az) + 1));
+    const cells = [];
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      let hit = 0;
+      for (const [du, dv] of SUB) {
+        const qx = X(i) + du * sx, qz = Z(j) + dv * sz;
+        let inside = false;
+        for (let a = 0, b = o.length - 1; a < o.length; b = a++) {
+          if ((o[a][1] > qz) !== (o[b][1] > qz) &&
+            qx < (o[b][0] - o[a][0]) * (qz - o[a][1]) / (o[b][1] - o[a][1]) + o[a][0]) inside = !inside;
+        }
+        if (inside) hit++;
+      }
+      if (hit) cells.push([j * N + i, hit / SUB.length]);
+    }
+    // a tarn smaller than one cell still gets a glint: mark the cell under its centre
+    if (!cells.length) cells.push([Math.max(0, Math.min(N - 1, Math.round(CJ(lake.z)))) * N +
+      Math.max(0, Math.min(N - 1, Math.round(CI(lake.x)))), .7]);
+    let lev = lake.l;
+    if (!lev) {                                 // valley water: the surface is what the DSM read
+      const vals = cells.filter(c => c[1] > .5).map(c => el[c[0]]).sort((a, b) => a - b);
+      lev = vals.length ? vals[Math.floor(vals.length * .35)] : el[cells[0][0]];
+    }
+    levels.push((lev - REF) * K);
+    for (const [k, c] of cells) {
+      wat[k] = Math.max(wat[k], c);
+      el[k] += (lev - el[k]) * sm(clamp01((c - .2) / .6));
+    }
+    // No bank may stand above its own water, one cell out: the shoreline is drawn at the
+    // surface, and between two cells the mesh climbs away from it fast enough to swallow it.
+    for (const [k] of cells) {
+      const i = k % N, j = (k / N) | 0;
+      for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) {
+        const q = (j + b) * N + (i + a);
+        if (i + a >= 0 && i + a < N && j + b >= 0 && j + b < N && el[q] > lev) el[q] = lev;
+      }
+    }
+  }
+
+  // ---- heights, in world units ----
+  const heights = new Float32Array(n2);
+  for (let k = 0; k < n2; k++) heights[k] = (el[k] - REF) * K;
+
+  // The streams, the shorelines and the paths are not in here: a distance field sampled at
+  // 66 m draws them as blocks. They are drawn as real geometry instead, in world.js.
+
+  // ---- the lights, as fields on the ground ----
+  const warm = new Float32Array(n2), cool = new Float32Array(n2), glow = new Float32Array(n2);
+  const pool = (arr, x, z, r, a) => {
+    const i0 = Math.max(0, Math.floor(CI(x - r))), i1 = Math.min(N - 1, Math.ceil(CI(x + r)));
+    const j0 = Math.max(0, Math.floor(CJ(z + r))), j1 = Math.min(N - 1, Math.ceil(CJ(z - r)));
+    for (let j = j0; j <= j1; j++) { const dz = Z(j) - z; for (let i = i0; i <= i1; i++) { const dx = X(i) - x, k = j * N + i; const q = 1 - clamp01(Math.hypot(dx, dz) / r); arr[k] = Math.min(1.35, arr[k] + a * q * q * (3 - 2 * q) * .5 + a * q * q * q * .5); } }
+  };
+  // The pools are smaller and softer than the first cut: the hut itself is drawn now, so the
+  // light on the ground only has to say that someone is in it, not stand in for the building.
+  for (const s of F.shelters) pool(warm, s.x, s.z, s.p ? 2.3 : 1.7, s.p ? .8 : .48);
+  pool(cool, F.landmarks.rton.x, F.landmarks.rton.z, 3.1, 1.05);
+  pool(cool, F.landmarks.obs.x, F.landmarks.obs.z, 1.8, .7);
+  for (const t of F.towns) {
+    const s = Math.sqrt(t.p);
+    pool(glow, t.x, t.z, 2.2 + s * .1, Math.min(.85, .1 + s * .012));
+  }
+
+  // ---- pack ----
+  const tex = new Uint16Array(n2 * 4), aux = new Uint16Array(n2 * 4);
+  for (let k = 0, o = 0; k < n2; k++, o += 4) {
+    tex[o] = toHalf(heights[k]);
+    aux[o] = toHalf(Math.min(1.35, warm[k]));
+    aux[o + 1] = toHalf(Math.min(1.2, cool[k]));
+    aux[o + 2] = toHalf(Math.min(1, glow[k]));
+    aux[o + 3] = toHalf(wat[k]);
+  }
+  self.postMessage({ heights, tex, aux, levels }, [heights.buffer, tex.buffer, aux.buffer]);
+}

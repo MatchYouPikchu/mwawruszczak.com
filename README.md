@@ -27,7 +27,13 @@ Fonts are self-hosted from Google Fonts (SIL Open Font License, licences in `ass
 
 ## The map
 
-The map stops in `world.js` (`WAY`) set where the camera looks for each section of the page: target, distance, pitch and yaw (`pt` is an optional target for tall phone screens, where the words sit below the land instead of beside it). The labels (`LABELS`) are pinned to places on the land. The features in `F` (peaks, plateau, river, trails) are what the terrain is built around. Height is value and distance is readiness, so keep that true if you move things.
+The land is the real Karkonosze, seen from the Jelenia Góra basin at night. `assets/data/karkonosze-448.png` (and `-320.png` for phones) is a Copernicus GLO-30 elevation tile resampled to the bake's own grid and encoded as `metres = ((R<<8)|G)/10 - 100`; `assets/data/karkonosze.json` holds the shelters, lakes, streams, paths, summits and settlements from OpenStreetMap, already projected into world units. Both are sampled, not drawn, by `world-bake.js`: it decodes the tile, flattens the lakes to their real surfaces, and bakes the light each shelter, station and town throws on the ground. The streams, shorelines and paths are real geometry in `world.js`, widened in screen space, so they stay hairlines however close the camera comes.
+
+Heights are `(metres - 300) × 0.0175`, which puts Śnieżka at 22.8 units and makes a contour line every 50 m (every fifth, at 250 m, drawn heavier; the 25 m lines between them fade up as the camera closes in, so a near slope is drawn rather than bare). Every shelter, the observatory on Śnieżka and the relay above the Śnieżne Kotły are drawn as map symbols that hold their size in pixels, not as buildings — a hut stays a hut at any distance.
+
+The map stops in `WAY` set where the camera looks for each section: target, distance, pitch, yaw and lens, with `pt`/`pd`/`pp`/`py`/`pf` composing the same stop again for a tall phone screen. Open `?still=2&cam=24,16,-8,44,9,22,30` (target x,y,z, distance, pitch, yaw, lens) to try a camera against the real land before writing it into `WAY`. The labels (`LABELS`) are pinned to real places, and give way to each other in that order: the stop's own labels first, then place names, then the graticule. Height is value and distance is readiness, so keep that true if you move things.
+
+Attribution is not optional: the Copernicus notice and the OpenStreetMap credit in the footer must stay with the map.
 
 Respecting visitors: reduced-motion users get clean cuts between stops instead of camera flights, and the render loop pauses whenever the map is off screen.
 
