@@ -70,9 +70,28 @@ function buildStory() {
     { t: [24, 16, -8], dist: 44, pitch: 9, yaw: 22, fov: 30, pt: [24.5, 16, -8], pd: 1.05, pp: 11, py: 24, pf: 37 },
     // the climb out of Szklarska Poręba to the Szrenica shelter
     { t: [27, 11, 2], dist: 58, pitch: 38, yaw: -4, fov: 30, pt: [34, 12.5, 6], pd: .86, pp: 40, py: -14, pf: 36 },
-    // dawn: the range from the basin, first light from the east
-    { t: [-17, 13, -19], dist: 104, pitch: 19, yaw: -5, fov: 30, pt: [-15, 13, -14], pd: .95, pp: 21, py: -12, pf: 40 },
+    // The finale: from the Szrenica shelter along the crest on the red-marked trail, the whole
+    // way, to Śnieżka as the sun comes up. The camera rises off the third stop, turns to look
+    // down the range and keeps the head of the walk in front of it; it lands below the summit
+    // on the Silesian side, with the cone lit from the east and the observatory on top.
+    { t: [-30.97, 18.5, -26.86], dist: 30, pitch: 14, yaw: 38, fov: 32, pt: [-29.5, 16.2, -27], pd: .933, pp: 14, py: 36, pf: 44,
+      via: [
+        { t: [30, 17, -8], dist: 40, pitch: 22, yaw: 40, fov: 32 },
+        { t: [18, 19, -11], dist: 34, pitch: 17, yaw: 62, fov: 32 },
+        { t: [2, 17, -16], dist: 34, pitch: 15, yaw: 66, fov: 32 },
+        { t: [-14, 19, -21], dist: 32, pitch: 14, yaw: 55, fov: 32 },
+      ] },
   ];
+  // how far along the crest trail each key of the finale looks: the walk keeps pace with it
+  {
+    const rp = F.trails.find(t => t.k === 'ridge').p, acc = [0];
+    for (let i = 1; i < rp.length; i++) acc.push(acc[i - 1] + Math.hypot(rp[i][0] - rp[i - 1][0], rp[i][1] - rp[i - 1][1]));
+    const arcAt = (x, z) => { let b = 0, bd = 1e9; rp.forEach((q, i) => { const d = Math.hypot(q[0] - x, q[1] - z); if (d < bd) { bd = d; b = i; } }); return acc[b]; };
+    const fin = WAY[WAY.length - 1];
+    WAY[WAY.length - 2].arc = 0; fin.arc = acc[acc.length - 1];
+    let last = 0;
+    for (const v of fin.via) last = v.arc = Math.max(last, arcAt(v.t[0], v.t[2]));
+  }
   if (OG) WAY[0] = { t: [-4, 12, -14], dist: 106, pitch: 26, yaw: 8, fov: 30 };
   // ?still=N&cam=tx,ty,tz,dist,pitch,yaw,fov - for composing a stop against the real land
   if (STILL !== null && Q.has('cam')) {
@@ -390,12 +409,17 @@ void main(){
 const RVS = `#version 300 es
 precision highp float;
 in vec3 aPos; in vec2 aDir; in float aSide; in float aArc; in float aSty; in float aGlow;
-uniform mat4 uVP; uniform vec2 uPix; uniform float uWid[8];
+uniform mat4 uVP; uniform vec2 uPix; uniform float uWid[8]; uniform float uWalk;
 out float vArc; out float vSide; out float vW; out float vGlow; out vec3 vP;
 flat out int vSty;
 void main(){
   vSty = int(aSty + .5); vArc = aArc; vSide = aSide; vGlow = aGlow; vP = aPos;
   vW = uWid[vSty];
+  // the crest trail the finale has walked is drawn heavier, and heaviest at its head
+  if (vSty == 6 && uWalk > .01) {
+    float wk = 1. - smoothstep(uWalk - 1., uWalk + .3, aArc), hd = exp(-(aArc - uWalk) * (aArc - uWalk) / 1.6);
+    vW *= 1. + wk * .35 + hd * 1.4;
+  }
   vec4 c = uVP * vec4(aPos, 1.);
   if (aSide != 0. && c.w > .02) {
     vec4 c2 = uVP * vec4(aPos + vec3(aDir.x, 0., aDir.y), 1.);
@@ -411,6 +435,7 @@ precision highp float;
 in float vArc; in float vSide; in float vW; in float vGlow; in vec3 vP;
 flat in int vSty;
 uniform vec4 uCol[8]; uniform float uDawn; uniform float uReveal; uniform vec3 uCam; uniform float uWarm;
+uniform float uWalk;   // how far along the crest trail the finale has come
 uniform vec4 uPanel; uniform float uPanelK;
 uniform vec4 uShore;    // the one shelter that stands on a shore: x, z, how brightly it burns
 uniform vec4 uShoreD;   // and the way its light lies out over the water, from here
@@ -447,11 +472,13 @@ void main(){
     c += vec3(1., .52, .24) * lane * trem * uShore.z * uWarm * (1.15 + fres * 2.1);
     a *= 1. - vGlow * .2;
   } else {
+    float wk = 0., hd = 0.;
+    if (vSty == 6 && uWalk > .01) { wk = 1. - smoothstep(uWalk - 1., uWalk + .3, vArc); hd = exp(-(vArc - uWalk) * (vArc - uWalk) / 1.6); }
     a *= clamp((1. - abs(vSide)) * vW, 0., 1.);
     // only the crest route is dashed. Two waymarked paths that share a route were drawn in
     // step, so their dashes interleaved and read as a glitch; the rest are drawn thin and
     // whole. The dash grows with distance, so a near path and a far one keep one cadence.
-    if (vSty == 6) { float ph = fract(vArc / (1.6 + d * .016)); a *= smoothstep(.34, .46, ph) * (1. - smoothstep(.86, .96, ph)); }
+    if (vSty == 6) { float ph = fract(vArc / (1.6 + d * .016)); a *= mix(smoothstep(.34, .46, ph) * (1. - smoothstep(.86, .96, ph)), 1., wk); }
     if (vSty == 3) c = mix(c, vec3(1., .78, .5), vGlow * uWarm * .7);
   }
   // at dawn the line work takes the light too: it keeps its weight and loses its colour,
@@ -459,6 +486,12 @@ void main(){
   float dw = smoothstep(0., .5, uDawn);
   float lum = dot(c, vec3(.3, .59, .11));
   c = mix(c, vec3(lum) * vec3(1.35, 1., .72) + vec3(.05, .03, .02), dw);
+  // what has been walked keeps a warm line of its own to the summit, and its head is a light
+  if (vSty == 6 && uWalk > .01) {
+    float wk = 1. - smoothstep(uWalk - 1., uWalk + .3, vArc), hd = exp(-(vArc - uWalk) * (vArc - uWalk) / 1.6);
+    c = mix(c, vec3(1., .74, .44), wk * .80) + vec3(1., .66, .36) * hd * .80;
+    a = min(1., a * (1. + wk * .6 + hd * 1.2));
+  }
   a *= smoothstep(vP.y - 1.6, vP.y, uReveal);
   c = mix(c, mix(vec3(.040, .064, .102), vec3(.188, .153, .136), uDawn),
     smoothstep(mix(46., 75., uDawn), mix(236., 255., uDawn), d) * (.74 - uDawn * .36));
@@ -497,7 +530,7 @@ void main(){ vK = aK; vA = aA; vQ = aQ;
   // line of sight, which leaves it exactly where it was on screen but in front of the slope it
   // stands on, so the hillside never cuts into the building and the building never floats.
   vec3 P = aPos;
-  if (k == 6 || k == 7) P += normalize(uCamP - aPos) * .55;
+  if (k >= 6 && k <= 9) P += normalize(uCamP - aPos) * .55;
   vec4 c = uVP * vec4(P, 1.); gl_Position = c;
   vNear = smoothstep(NF[k], NN[k], max(c.w, .1));
   // A shelter's halo opens out as the camera closes in - far more than perspective alone
@@ -514,8 +547,14 @@ void main(){ vK = aK; vA = aA; vQ = aQ;
     hutPx = clamp((k == 6 ? 2.3 : 1.75) * uScale.x / max(c.w, .1), (k == 6 ? 13. : 10.) * uScale.y, (k == 6 ? 46. : 34.) * uScale.y * uScale.z);
     px = max(px, hutPx / .58);
   }
+  // the observatory and the relay the same way: their foot on the summit and the rim, and a
+  // size in the world, so the one the finale lands beside is a building and not a badge
+  if (k == 8 || k == 9) {
+    hutPx = clamp((k == 8 ? 2.2 : 2.4) * uScale.x / max(c.w, .1), 12. * uScale.y, (k == 8 ? 64. : 58.) * uScale.y * uScale.z);
+    px = max(px, hutPx * (k == 8 ? 1.30 : 1.62));   // the mast is tall: it needs the room
+  }
   gl_PointSize = vPx = px;
-  vHut = (k == 6 || k == 7) ? clamp(hutPx / max(vPx, 1.), .10, .58) : .3; }`;
+  vHut = (k >= 6 && k <= 9) ? clamp(hutPx / max(vPx, 1.), .10, k == 8 ? .77 : k == 9 ? .617 : .58) : .3; }`;
 const PFS = `#version 300 es
 precision mediump float;
 in float vA; in float vK; in float vPx; in float vNear; in float vQ; in float vHut;
@@ -557,7 +596,7 @@ void main(){
   // instead of removing one. That is what Śnieżka wore in the hero.
   float edge = 1. - smoothstep(.38, .50, r);
   // the solid pass draws only the huts themselves; everything else is light
-  if (uPass == 0 && k != 6 && k != 7) discard;
+  if (uPass == 0 && (k < 6 || k > 9)) discard;
   if (k == 10) {
     // Chimney smoke. One soft puff, raked cool by the moon on the side the moon is on and
     // warm underneath from the window it has just left: the only thing in this picture lit
@@ -605,9 +644,9 @@ void main(){
       // the moon catches the edge of the roof all the way round - eaves, both verges and the
       // ridge - so the building keeps its whole shape even where a slope is in shadow
       float rim = in0 * (1. - smoothstep(ha * .8, ha * 2.6, -sd)) * isRoof;
-      body += vec3(.62, .72, .88) * rim * (.20 + .30 * max(kr, kl));
+      body += mix(vec3(.62, .72, .88), vec3(1., .72, .48), uDawn) * rim * (.20 + .30 * max(kr, kl) + .25 * uDawn);
       vec3 glass = vec3(1., .78, .46) * (.35 + .85 * vA) * vQ;
-      float a = clamp(in0 + pane, 0., 1.) * vNear * clamp(.45 + vA, 0., 1.);
+      float a = clamp(in0 + pane, 0., 1.) * vNear * clamp(.45 + vA + uDawn, 0., 1.);
       vec3 cb = mix(body, glass, clamp(pane / max(in0 + pane, 1e-3), 0., 1.));
       float shade = contact * .58 * (1. - a);
       o = vec4(warmth(cb) * a, a + shade);               // premultiplied: the shadow is black
@@ -643,20 +682,39 @@ void main(){
   // glow in the air and the thing itself standing dark inside it, with the one edge the
   // moon finds on steel. The strokes are held at a width in CSS pixels rather than device
   // pixels, so a sharp screen gets a finer line and not a crisper drawing.
-  float px = uDpr / max(vPx, 8.);
+  // The drawing stands on the sprite's centre, which is the ground: its own units are the
+  // sprite's divided by the share of it the building takes, with the foot at the middle.
+  float hv = vHut;
+  vec2 qd = q / hv + vec2(0., k == 8 ? .255 : .30);
+  float px = uDpr / max(vPx * hv, 8.);
   float d, win;
   vec3 ink = vec3(.84, .93, 1.), lit = vec3(.9, .96, 1.), glow = vec3(.42, .62, .9);
   if (k == 8) {              // Śnieżka: three saucers, each one smaller than the one under it
-    d = min(min(disc(q, vec2(0., .175), vec2(.255, .080)), disc(q, vec2(0., .025), vec2(.195, .070))),
-            min(disc(q, vec2(0., -.105), vec2(.130, .058)), box(q - vec2(0., -.255), vec2(.011, .085))));
-    win = 1. - smoothstep(.016, .040, box(q - vec2(.150, .175), vec2(.030, .016)));
+    d = min(min(disc(qd, vec2(0., .175), vec2(.255, .080)), disc(qd, vec2(0., .025), vec2(.195, .070))),
+            min(disc(qd, vec2(0., -.105), vec2(.130, .058)), box(qd - vec2(0., -.255), vec2(.011, .085))));
+    win = 1. - smoothstep(.016, .040, box(qd - vec2(.150, .175), vec2(.030, .016)));
   } else {                                      // the relay: a tapering mast, the hut beside it
     lit = vec3(.86, .94, 1.);
-    float t = clamp((.30 - q.y) / .76, 0., 1.);
-    d = min(seg(q, vec2(0., .30), vec2(0., -.46)) - mix(.046, .006, t * t),
-            box(q - vec2(.235, .225), vec2(.135, .072)));
-    win = 1. - smoothstep(.014, .036, box(q - vec2(.262, .212), vec2(.034, .016)));
+    float t = clamp((.30 - qd.y) / .76, 0., 1.);
+    d = min(seg(qd, vec2(0., .30), vec2(0., -.46)) - mix(.046, .006, t * t),
+            box(qd - vec2(.235, .225), vec2(.135, .072)));
+    win = 1. - smoothstep(.014, .036, box(qd - vec2(.262, .212), vec2(.034, .016)));
   }
+  float sil = (1. - smoothstep(-px * .6, px * .9, d)) * vNear;
+  if (uPass == 0) {
+    // the thing itself, solid: dark steel and concrete, with the one edge the moon finds on
+    // it at night and the sun at dawn, and a little shadow where it meets the rock
+    float rim = 1. - smoothstep(px * .5, px * 3.2, -d);
+    vec3 body = vec3(.024, .028, .036) + mix(vec3(.50, .60, .78) * .30, vec3(1., .70, .46) * .55, uDawn) * rim;
+    vec2 cq = vec2(qd.x / .34, (qd.y - (k == 8 ? .255 : .30)) / .045);
+    float contact = exp(-dot(cq, cq)) * vNear * .5;
+    float a = sil * clamp(.55 + vA + uDawn, 0., 1.);
+    o = vec4(warmth(body) * a, a + contact * (1. - a));
+    return;
+  }
+  // the air round it is centred on the building, not on its foot
+  float lift = (k == 8 ? .30 : .38) * hv;
+  r = length(q + vec2(0., lift)) * .5 / (.5 - lift);
   float far = 1. - vNear;
   // every glow here is round and every one of them reaches zero at the sprite's edge of its
   // own accord, so nothing has to be cut off at a boundary and nothing wears a box
@@ -664,9 +722,8 @@ void main(){
   float core = smoothstep(.20, 0., r), air = f2 * fall, haze = f2;
   vec3 c = vec3(.80, .89, 1.) * (core * (.34 + .80 * far) + air * (.80 + .40 * far))
     + glow * haze * (.18 + .30 * vNear);
-  float sil = (1. - smoothstep(-px * .6, px * .9, d)) * vNear;
-  c *= 1. - sil * .74;                            // it stands in its own light, not on it
-  c += ink * sil * .24 + lit * win * .95 * vNear;
+  c *= 1. - sil * .97;                            // it stands in its own light, not on it
+  c += lit * win * .95 * vNear * (1. - uDawn * .6);
   c /= 1. + c * .62;
   c = warmth(c) * edge;
   o = vec4(c * vA, max(c.r, max(c.g, c.b)) * vA); }`;
@@ -689,7 +746,7 @@ function start(bake, gl) {
   const uni = (p, names) => Object.fromEntries(names.map(n => [n, gl.getUniformLocation(p, n)]));
   const UL = uni(land, ['uMap', 'uAux', 'uVP', 'uRect', 'uTexel', 'uCam', 'uMoon', 'uLamp', 'uLampOn', 'uDawn', 'uReveal', 'uBeat', 'uGain', 'uLit', 'uFine', 'uPanel', 'uPanelK', 'uPre']);
   const UP = uni(dots, ['uVP', 'uScale', 'uDawn', 'uMoonS', 'uDpr', 'uCamP', 'uPass']);
-  const UR = uni(ribs, ['uVP', 'uPix', 'uWid', 'uCol', 'uDawn', 'uReveal', 'uCam', 'uWarm', 'uPanel', 'uPanelK', 'uShore', 'uShoreD', 'uT']);
+  const UR = uni(ribs, ['uVP', 'uPix', 'uWid', 'uCol', 'uDawn', 'uReveal', 'uCam', 'uWarm', 'uPanel', 'uPanelK', 'uShore', 'uShoreD', 'uT', 'uWalk']);
   const US = uni(sky, ['uRx', 'uRy', 'uFw', 'uMoon', 'uDawn', 'uPre']);
   const skyVao = gl.createVertexArray();      // three vertices made out of gl_VertexID alone
 
@@ -831,13 +888,15 @@ function start(bake, gl) {
   // homes. They do not breathe, they do not smoke, and they do not go out when the day
   // comes: they come on together, early, and they stay.
   const RT = F.landmarks.rton, grt = LAMPS.length; LAMPS.push([RT.x, RT.z]); GRP.push({ home: 0, ph: 0 });
-  put(RT.x, RT.z, .5, 1, 9, grt, .10, .42, .44);
-  put(RT.x + .22, RT.z + .1, .22, .45, 2, grt, .14, .42, .44);
+  put(RT.x, RT.z, -.04, 1, 9, grt, .10, .42, .44);
   const beaconAt0 = PTS.length;
-  put(RT.x, RT.z, .95, 1, 3, grt, .06, 1.2, 1);
+  put(RT.x, RT.z, .88, 1, 3, grt, .06, 1.2, 1);    // the top of the mast as it is drawn
   const OB = F.landmarks.obs, gob = LAMPS.length; LAMPS.push([OB.x, OB.z]); GRP.push({ home: 0, ph: 0 });
-  put(OB.x, OB.z, .44, 1, 8, gob, .10, .42, .44);
-  for (let k = 0; k < 2; k++) put(OB.x + Math.cos(k * 2.4) * .16, OB.z + Math.sin(k * 2.4) * .16, .22 + k * .08, .8, 2, gob, .14 + k * .08, .42, .44);
+  put(OB.x, OB.z, -.04, 1, 8, gob, .10, .42, .44);
+  // The walker of the finale: one lamp that goes the length of the crest trail with the
+  // camera, from the Szrenica shelter to the summit, and is put out there by the day.
+  const walkerAt = PTS.length;
+  put(F.trails.find(t => t.k === 'ridge').p[0][0], F.trails.find(t => t.k === 'ridge').p[0][1], .35, 1, 1, -1, 0, 9, 1);
   const MARKN = LAMPS.length;
   // the valley towns: lights scattered on the real settlements, thickest where the people
   // are, and switched off the same way round as the huts - the east end of the basin first
@@ -867,9 +926,11 @@ function start(bake, gl) {
   const SMOKE = [];
   SH.forEach((s, i) => {
     const n = s.p ? 8 : 3;
-    const hw = s.p ? 2.3 : 1.75, y0 = heightAt(s.x, s.z) + hw * .64;   // the top of the flue
+    // the top of the flue as the hut is drawn: a hut's width in its sprite is about half
+    // that width in land, at the lenses this flight uses
+    const hw = s.p ? 2.3 : 1.75, y0 = heightAt(s.x, s.z) + hw * .265;
     for (let k = 0; k < n; k++) SMOKE.push({
-      g: i, x: s.x, y: y0, z: s.z, fl: -.21 * hw,
+      g: i, x: s.x, y: y0, z: s.z, fl: -.102 * hw,
       ph: k / n + ((i * 37 + k * 11) % 23) / 460,
       rate: (s.p ? .135 : .115) * (.88 + ((i * 13 + k * 5) % 7) / 26),
       rise: s.p ? 1.30 : .92,
@@ -985,8 +1046,49 @@ function start(bake, gl) {
   fit();
   const lerp = (a, b, t) => a + (b - a) * t;
   const portrait = () => cw / ch < .8;
+  // A flight with waypoints - the last one, along the crest - is one smooth curve through all
+  // of its keys, paced by how far the camera actually travels between them, so it neither
+  // dawdles over the first summit nor rushes the last.
+  const chains = {};
+  const keyOf = (k, tall, inner) => {
+    const v = tall ? { t: k.pt || k.t, dist: k.dist, pd: k.pd || (inner ? 1.15 : 1.2), pitch: k.pp ?? k.pitch, yaw: k.py ?? k.yaw, fov: k.pf ?? (k.fov + (inner ? 8 : 0)) }
+      : { t: k.t, dist: k.dist, pd: k.pd || 1.2, pitch: k.pitch, yaw: k.yaw, fov: k.fov };
+    const d = v.dist * (tall ? v.pd : 1), pr = v.pitch * Math.PI / 180, yr = v.yaw * Math.PI / 180;
+    v.eye = [v.t[0] + Math.sin(yr) * Math.cos(pr) * d, v.t[1] + Math.sin(pr) * d, v.t[2] + Math.cos(yr) * Math.cos(pr) * d];
+    v.arc = k.arc || 0;
+    return v;
+  };
+  const chainOf = (i, tall) => {
+    const id = i + (tall ? 'p' : 'l');
+    if (chains[id]) return chains[id];
+    const B = WAY[i + 1], ks = [WAY[i], ...B.via, B];
+    const K = ks.map((k, j) => keyOf(k, tall, j > 0 && j < ks.length - 1));
+    const S = [0];
+    for (let j = 1; j < K.length; j++) {
+      const a = K[j - 1], b = K[j];
+      S.push(S[j - 1] + (Math.hypot(b.t[0] - a.t[0], b.t[1] - a.t[1], b.t[2] - a.t[2]) + Math.hypot(b.eye[0] - a.eye[0], b.eye[1] - a.eye[1], b.eye[2] - a.eye[2])) / 2);
+    }
+    return (chains[id] = { K, S });
+  };
+  const cr = (a, b, c, d, w) => .5 * (2 * b + (c - a) * w + (2 * a - 5 * b + 4 * c - d) * w * w + (3 * b - a - 3 * c + d) * w * w * w);
+  const viaAt = (i, f, tall) => {
+    const { K, S } = chainOf(i, tall), m = K.length - 1, at = f * S[m];
+    let j = 0; while (j < m - 1 && S[j + 1] < at) j++;
+    const w = Math.min(1, Math.max(0, (at - S[j]) / Math.max(1e-6, S[j + 1] - S[j])));
+    // the ends are reflected, so the curve leaves the first stop and reaches the last at speed
+    // and the easing is left to the scroll
+    const P = q => q < 0 ? null : q > m ? null : K[q];
+    const g = (q, get) => { const k = P(q); if (k) return get(k); return q < 0 ? 2 * get(K[0]) - get(K[1]) : 2 * get(K[m]) - get(K[m - 1]); };
+    const v = get => cr(g(j - 1, get), g(j, get), g(j + 1, get), g(j + 2, get), w);
+    return {
+      t: [0, 1, 2].map(x => v(k => k.t[x])), dist: v(k => k.dist), pd: v(k => k.pd),
+      pitch: v(k => k.pitch), yaw: v(k => k.yaw), fov: v(k => k.fov),
+      arc: K[j].arc + (K[j + 1].arc - K[j].arc) * w,
+    };
+  };
   const camAt = u => {
     const i = Math.min(n - 2, Math.floor(u)), f = u - i, A = WAY[i], B = WAY[i + 1], tall = portrait();
+    if (B.via) return viaAt(i, f, tall);
     const ta = tall && A.pt ? A.pt : A.t, tb = tall && B.pt ? B.pt : B.t;
     const t = [0, 1, 2].map(k => lerp(ta[k], tb[k], f));
     const travel = Math.hypot(B.t[0] - A.t[0], B.t[2] - A.t[2]);
@@ -1068,7 +1170,12 @@ function start(bake, gl) {
     // to pull back, so the colour arrives while the camera is still moving and the huts have
     // the room to go out in order. Packed into the last tenth it arrived as a cut, and took
     // the one sequence on the page - the lights going out from the east - down with it.
-    const dawn = c01(cur - (n - 2));
+    // It holds back for the first part of the crest: the walk starts in moonlight, and the
+    // colour comes into the land as the summit comes into view.
+    const dawn = Math.pow(c01(cur - (n - 2)), 1.7);
+    // how far along the crest the walk has come: nowhere before the last flight, the whole
+    // trail to the summit once it lands
+    const walk = cur <= n - 2 ? 0 : (c.arc === undefined ? TP.ridge.L : c.arc);
     // The hour before. The sky in the east comes up a stop at a time, so the sun at the last
     // stop finishes something that started on the first screen instead of arriving from
     // nowhere. It is full by the fourth stop, where the dawn itself takes the picture over.
@@ -1139,6 +1246,11 @@ function start(bake, gl) {
       ap[ao + 3] = a;
       if (home) ap[ao + 5] = breath[q[5]];
     }
+    {
+      const o = (AN + walkerAt) * 6, w = along(TP.ridge, walk), L = TP.ridge.L;
+      ap[o] = w[0]; ap[o + 1] = w[1] + .12; ap[o + 2] = w[2];
+      ap[o + 3] = sst(0, 2, walk) * (1 - .8 * sst(L - 5, L, walk)) * .75;
+    }
     // what the ground under them is given: the average of what is actually burning
     const warmK = warmS / SH.length, coolK = coolS * .5, townK = townN ? townS / townN : 0;
 
@@ -1183,6 +1295,7 @@ function start(bake, gl) {
     gl.uniform1f(UR.uPanelK, panelK);
     gl.uniform3f(UR.uCam, eye[0], eye[1], eye[2]);
     gl.uniform1f(UR.uT, reduce ? 0 : time);
+    gl.uniform1f(UR.uWalk, walk);
     if (SHORE) {
       // Which way Samotnia's windows lie out over Mały Staw. On a flat mirror the answer is
       // straight at the viewer, but the tarn is two hundred metres across and every stop on

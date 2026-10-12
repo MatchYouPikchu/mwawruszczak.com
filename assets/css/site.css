@@ -103,6 +103,9 @@ img,canvas,video{display:block;max-width:100%}
 .flight::after{content:"";position:absolute;left:0;right:0;bottom:0;height:46vh;pointer-events:none;z-index:-1;background:linear-gradient(rgba(8,20,22,0),var(--night) 92%)}
 .stop{position:relative;min-height:96vh;display:flex;align-items:center;padding:96px var(--edge)}
 .stop-hero{min-height:100svh;align-items:flex-end;padding-bottom:clamp(40px,9vh,96px)}
+/* the last flight goes the length of the crest, so it gets the room to: a stretch of scroll
+   with no words in it, between the third stop and the summit */
+@media (prefers-reduced-motion:no-preference){html.has-world #next{margin-top:70vh}}
 .panel{position:relative;max-width:34rem;padding:6px 0}
 .panel::before{content:"";position:absolute;inset:-28% -30% -28% -40%;z-index:-1;pointer-events:none;background:radial-gradient(closest-side,rgba(16,15,15,.82),rgba(16,15,15,.55) 55%,transparent)}
 .hero-panel{max-width:44rem}
