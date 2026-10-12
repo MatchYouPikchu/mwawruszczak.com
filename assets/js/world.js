@@ -170,10 +170,12 @@ void main(){
   // Close in, the 25 m lines fade up between them: the line density then does the texturing
   // a 30 m heightmap cannot, instead of advertising how smooth the surface is.
   float f = h / .875;
-  float dens = clamp(1.3 - fwidth(f) * .8, 0., 1.);
+  // crowded lines are dropped, and harder at dawn: on a shaded headwall a cluster of them
+  // goes pale against a warm range and reads as a tear in the picture instead of as rock
+  float dens = clamp(1.3 - fwidth(f) * (.8 + uDawn * 1.3), 0., 1.);
   float minor = iso(f, .85) * dens;
   float fine = uFine * iso(f * 2., .8) * clamp(1.25 - fwidth(f * 2.) * .8, 0., 1.);
-  float major = iso(f / 5., .95) * clamp(1.35 - fwidth(f / 5.) * .5, 0., 1.);
+  float major = iso(f / 5., .95) * clamp(1.35 - fwidth(f / 5.) * (.5 + uDawn * 1.1), 0., 1.);
   // the soft band around an index line is dropped where the lines crowd, or a headwall
   // turns into a pale wash instead of rock
   float halo = iso(f / 5., 4.5) * .085 * clamp(1.3 - fwidth(f / 5.) * 1.7, 0., 1.);
