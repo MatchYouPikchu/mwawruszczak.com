@@ -10,3 +10,6 @@ assets/vendor/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# local tooling (worktrees, agent state): never publish
+.claude/
