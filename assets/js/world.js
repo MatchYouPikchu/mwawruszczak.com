@@ -169,6 +169,7 @@ precision highp float;
 in vec2 vNdc;
 uniform vec3 uRx; uniform vec3 uRy; uniform vec3 uFw; uniform vec3 uMoon; uniform float uDawn;
 uniform float uPre;     // how far into the hour before sunrise: 0 at the first stop, 1 at the last
+uniform vec4 uPanel; uniform float uPanelK;   // the block of type on screen, in device pixels
 out vec4 o;
 ${DAWNAIR}
 float h21(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract(p.x * p.y); }
@@ -236,7 +237,10 @@ void main(){
   // violet: spread evenly it is one orange wash across the whole dome, which is a filter
   float ad = towardSun(d.xz), tow = pow(ad, 2.6);
   vec3 hi = mix(vec3(.040, .058, .122), vec3(.160, .125, .185), tow);   // the zenith, warming towards the sun
-  vec3 lo = mix(vec3(.120, .098, .158), vec3(1.18, .600, .275), tow);   // the horizon: violet west, gold east
+  // the horizon: violet in the west, gold in the east. Gold, and not a lamp - the band over
+  // the sun is the brightest thing in the sky and it still has to sit under the brightest
+  // thing on the mountain, or the eye goes to an empty corner of the frame and stays there
+  vec3 lo = mix(vec3(.120, .098, .158), vec3(.680, .345, .165), tow);
   vec3 cd = mix(hi, lo, exp(-max(up, 0.) * 3.2));
   // the belt of pink that stands over the band itself, which is the colour everybody
   // remembers from the one morning they were up for it
@@ -246,14 +250,31 @@ void main(){
   // Looking into the sun across twenty kilometres of basin air, it glows - brightest just
   // under the skyline, and falling away as the eye goes down into the basin, or the whole
   // upper half of the frame comes out as one flat sheet of orange.
-  cd = mix(cd, airAt(ad) * (.58 + .52 * smoothstep(-.34, .02, up)), smoothstep(.03, -.22, up));
+  // Held well under the full strength of that air, and not for want of nerve: the subject
+  // of this frame is a mountain catching its first light, and lit air twenty kilometres off
+  // has no business being nine times brighter than the brightest rock. Cut like this the
+  // range keeps the frame and the sky is what stands behind it.
+  cd = mix(cd, airAt(ad) * (.48 + .44 * smoothstep(-.34, .02, up)), smoothstep(.03, -.22, up));
   // and straight down off the edge of the sheet it goes out again: there is no light under
   // the frame, and a floor of glowing air would read as a lit table the model stands on
   cd = mix(cd, mix(vec3(.030, .036, .060), vec3(.130, .082, .074), tow), smoothstep(-.26, -.74, up));
-  // the disc, for the frames that turn far enough east to find it, and the flare round it
-  float sm = dot(d, normalize(vec3(-.95, .17, .26)));
-  cd += vec3(1., .80, .52) * pow(max(sm, 0.), 2600.) * 7.;
-  cd += vec3(1., .54, .30) * pow(max(sm, 0.), 60.) * .30;
+  // Where the words are, the sunrise steps back. Every other pass on this map already does
+  // it - the land, the line work, the buildings and the light on the ground all take uPanel
+  // - and the sky was the one layer that did not. That stopped being harmless the moment it
+  // went from a dark wash to the brightest thing in the frame: at the landing the gold
+  // stands directly behind the counter and the first line of the heading. So the gold is
+  // held down over the block of type, over a skirt two thirds as deep as the block itself -
+  // a couple of hundred pixels at this size - which is wide enough that what the eye reads
+  // is deeper air on that side of the frame and not a rectangle cut out of the sky. The
+  // distance out of the block is taken as a length rather than as the larger of the two
+  // sides, so the corners come off round; a square corner drawn across an empty sky is
+  // exactly the thing an eye finds, and there is nothing in air that has corners. And the
+  // red comes down hardest of the three, so what is left behind the type is the violet the
+  // rest of the dome is already in, rather than a grey hole in a warm sky.
+  float fw = max(.62 * (uPanel.w - uPanel.y), 1.);
+  vec2 od = max(uPanel.xy - gl_FragCoord.xy, gl_FragCoord.xy - uPanel.zw);
+  float q = uPanelK <= 0. ? 0. : uPanelK * (1. - smoothstep(0., fw, length(max(od, vec2(0.)))));
+  cd *= 1. - q * vec3(.52, .44, .30);
   // eased in, so the first part of the last flight is still a night sky with a rumour in
   // the east rather than a lit one: the colour should arrive while the camera is moving
   c = mix(c, cd, pow(uDawn, 1.3));
@@ -277,8 +298,12 @@ void main(){
 // Used by the land and by the buildings, which march from their own walls and roofs, so an
 // upper storey can stand in the light while the ground floor is still in the shadow of the
 // cone above it - which is exactly what you see at Dom Śląski on a clear morning.
+// Twenty-four steps, each about a sixth longer than the last, reach some 72 world units -
+// seventeen kilometres, more than the sheet is wide, so nothing standing on it can cast a
+// shadow this march fails to find. A phone takes twelve, growing rather faster, and reaches
+// about 32 units: eight kilometres, every ridge that matters at that size, at half the fill.
 const SHADOW = `
-#define SH_STEPS ${SMALL ? 14 : 24}
+#define SH_STEPS ${SMALL ? 12 : 24}
 vec2 shUv(vec2 p){ return vec2((p.x - uRect.x) / uRect.z + .5, .5 - (p.y - uRect.y) / uRect.w); }
 float shadeAt(vec3 p, vec3 n, vec3 L, float far){
   float t = ${SMALL ? '.56' : '.44'}, st = ${SMALL ? '.56' : '.36'}, res = 1.;
@@ -433,7 +458,23 @@ void main(){
   // towards it picks that up. It is what keeps the half-lit faces from falling straight off
   // a hard terminator into blue, and it is why a photograph of a sunrise has a broad warm
   // side to every ridge rather than a bright edge and nothing.
-  float aur = pow(clamp(dot(n, sunD) * .56 + .44, 0., 1.), 2.4) * sun * mix(.45, 1., shd);
+  // A ridge in the way blocks the disc long before it blocks thirty degrees of sky, so the
+  // aureole only half goes out in a cast shadow. It must stop doing even that where the
+  // march was never run: ground turned from the light returns shd = 1 without marching, so
+  // the shadow's share of the aureole is faded in with the same geometry that decides
+  // whether to march at all, and nothing steps where a terminator crosses a cast shadow.
+  float lf = smoothstep(0., .06, max(dn, dd));
+  float aur = pow(clamp(dot(n, sunD) * .56 + .44, 0., 1.), 2.4) * sun * mix(1., mix(.45, 1., shd), lf);
+  // How much of the warm light has got to this piece of ground: the sun itself, and the
+  // aureole of air round it that reaches a flank the sun has not quite turned on to yet.
+  // The ground's own colour is mixed from both, so everything drawn over the ground has to
+  // be mixed from both as well - the contours, the rock grey, the catchlight on a fold, the
+  // wash on the highest ground. Keyed to the direct sun alone, a flank the aureole has
+  // warmed to orange comes out wearing cold grey lines, which is this file's old mint-lace
+  // fault in another key. It is also what puts the first warmth on the summit: the crown of
+  // Śnieżka is turned away from the sun, but it is high, convex and open to the whole of
+  // that bright quarter of sky, and it comes up warm a long time before the face below it.
+  float reach = clamp(lit * 1.5 + aur * .6, 0., 1.);
   // the sun reddens hardest when it is lowest: the faces it finds first are pink, and the
   // same faces are gold ten minutes later
   vec3 sunCol = mix(vec3(1., .34, .18), vec3(1., .64, .40), smoothstep(.28, 1.7, uDawn));
@@ -443,15 +484,20 @@ void main(){
   // blue, which is a glacier in the Alps and not the Karkonosze in October.
   vec3 albD = mix(vec3(.50, .44, .38), vec3(.58, .54, .50), alt);
   // what the open sky gives a slope in shadow - more of it the higher and the flatter the
-  // ground, and under it the cold the valleys hold until the sun gets down into them
-  vec3 shadeD = mix(vec3(.046, .050, .100), vec3(.074, .086, .150), alt);
+  // ground, and under it the cold the valleys hold until the sun gets down into them.
+  // High ground is not only given more of that light, it is given warmer light: a summit
+  // sees the whole eastern quarter of the sky and that quarter is already salmon, while down
+  // in the basin the range itself still holds it out. It is why the crown of a mountain is
+  // lilac a long while before any of it is in the sun, and why the valley under it is blue.
+  vec3 shadeD = mix(vec3(.046, .050, .100), mix(vec3(.074, .086, .150), vec3(.112, .082, .136), sun), alt);
   vec3 dawn = shadeD * (.34 + .78 * sky) + vec3(.036, .042, .062) * fill
     + albD * sunCol * (lit * 1.15 + pow(lit, 3.) * .28 + aur * .20);
   vec3 col = mix(night, dawn, uDawn);
   col *= 1. + curv * mix(.58, .42, uDawn);
   // the catchlight on a convex fold takes the colour of whatever light is reaching it: the
-  // sun on a lit spur, the sky on one in shadow
-  col += mix(vec3(.030, .046, .062) * (.2 + form), mix(vec3(.032, .042, .066), sunCol * .118, lit), uDawn)
+  // sun on a lit spur, the sky on one in shadow, and in between the aureole - which is why
+  // at first light the tops of things come up warm before their sides do
+  col += mix(vec3(.030, .046, .062) * (.2 + form), mix(vec3(.032, .042, .066), sunCol * .128, reach), uDawn)
     * max(curv, 0.) * .55;
   // light spilling out of the valleys, the way a town lifts its own sky
   col += mix(vec3(1., .74, .46), vec3(.65, .52, .5), uDawn) * a.b * uLit.z * .18 * (1. - alt * .72);
@@ -482,8 +528,15 @@ void main(){
   // the survey lamp brings the drawing back where it is held, even on a face the moon has
   // left - that is what a lamp held over a sheet does, and it is the one way to read the
   // contours in a shadowed cirque
+  float inkLit = clamp(reach + lamp, 0., 1.);
   float inkNight = (.15 + 1.05 * pow(dn, 1.2) * shdN + lamp * .62) * (.42 + .58 * smoothstep(250., 58., dist));
-  float ink = (.58 + .72 * alt) * mix(inkNight, .5 + .85 * lit, uDawn) * (1. - quiet * .82);
+  // and at dawn the line follows the ground down into cast shadow with it. The weight was
+  // levelled when a shadowed flank at dawn was still bronze-bright; under cast shadows that
+  // ground is five times darker, and a contour held at full strength over it stops
+  // describing rock and becomes wire laid over a cone - worst of all on Śnieżka, which is
+  // the one thing this whole film climbs to. In shadow it keeps a quiet tracery, because it
+  // is still a survey sheet; in the sun it keeps every bit of its weight.
+  float ink = (.58 + .72 * alt) * mix(inkNight, (.5 + .85 * lit) * mix(.35, 1., inkLit), uDawn) * (1. - quiet * .82);
   float warm = min(a.r * uLit.x, 1.), cool = min(a.g * uLit.y, 1.);
   // at first light the ink goes over to the warm ramp early and completely: a residual cool
   // term on a crowded headwall reads as a tear in the picture, not as shadowed rock
@@ -498,7 +551,6 @@ void main(){
   // and it is lit by whichever of the two lights has got to that piece of ground: warm ink
   // on a sunlit flank, and on one still in shadow the same blue the ground itself has gone,
   // because a copper line ruled across cold rock reads as rust, not as a contour.
-  float inkLit = clamp(lit * 1.5 + lamp, 0., 1.);
   lc = mix(lc, mix(vec3(.58, .69, .92), vec3(1., .67, .42), inkLit) * (.52 + .72 * inkLit), dw);
   float pulse = 1. + uBeat * .9;
   // the pools brighten the fine rings but barely the heavy fifth line, so a shelter is not
@@ -522,12 +574,14 @@ void main(){
     + halo * ink * (1. - uDawn * .55) * (.5 + lamp + .3 * wo) * pulse) * reveal * uGain;
   // steep ground reads as rock: a cool grey, so a headwall is stone and not an absence - but
   // at night only where the moon reaches it, or every crag in the range glows the same grey
-  col += mix(vec3(.085, .100, .125) * (.12 + 1.15 * form), mix(vec3(.050, .060, .082), vec3(.150, .104, .080), lit), uDawn)
+  col += mix(vec3(.085, .100, .125) * (.12 + 1.15 * form), mix(vec3(.050, .060, .082), vec3(.150, .104, .080), reach), uDawn)
     * smoothstep(1.8, 3.3, slope) * reveal;
   // the highest ground keeps a little starlight on it, and takes the sun first - but only
-  // the part of it the sun has actually got to: a summit crest lit along its eastern edge
-  // with the hollow behind it still cold is the whole of what first light looks like
-  col += mix(vec3(.040, .062, .088) * (.35 + .85 * form), mix(vec3(.048, .060, .092), sunCol * .40, lit), uDawn)
+  // the part of it the light has actually got to: a summit crest warm along its crown with
+  // the hollow behind it still cold is the whole of what first light looks like. The last
+  // two hundred metres of Śnieżka are where this lands, and it is what puts the warmth on
+  // the summit rocks under the observatory while the face below them is still out of it.
+  col += mix(vec3(.040, .062, .088) * (.35 + .85 * form), mix(vec3(.048, .060, .092), sunCol * .46, reach), uDawn)
     * smoothstep(.55, 1., alt) * .55 * reveal;
 
   // A crest seen edge-on with the sun behind it is lit through. The heather, the grass and
@@ -536,8 +590,12 @@ void main(){
   // backlit slope it is the only warm thing there is, and it is what draws the crest of this
   // range at the moment the sun clears the horizon. Only where the ridge actually stands
   // between the eye and the sun, and only where the light reaches the crest at all.
-  float edgeOn = pow(1. - abs(dot(n, normalize(uCam - vW))), 5.);
-  col += sunCol * edgeOn * pow(towardSun(vW.xz - uCam.xz), 3.) * sun * shd * .26 * uDawn * reveal;
+  // Kept deliberately tight and deliberately small. It is driven by the view and not by
+  // the sun's own geometry, so a loose exponent spreads it over the whole of a face that
+  // merely happens to lie near grazing, and that is rim light off a game engine, not a
+  // crest. At the seventh power it is the last few pixels of a skyline and nothing else.
+  float edgeOn = pow(1. - abs(dot(n, normalize(uCam - vW))), 7.);
+  col += sunCol * edgeOn * pow(towardSun(vW.xz - uCam.xz), 3.) * sun * shd * .20 * uDawn * reveal;
 
   // the graticule, every second arcminute of real longitude and latitude
   vec2 g = vec2(469.2 - vW.x / 9.52063, 1524.0075 + vW.z / 14.96395);
@@ -560,12 +618,15 @@ void main(){
   // brightest thing on this map and it should come up to the top of the scale, not go
   // through it: without this the red channel pins across half the range at the last stop,
   // every hue up there collapses to white, and a contour or a stream drawn over it has
-  // nowhere left to go, so the line work reads as cold lace on warm ground. Below .72
-  // nothing moves at all, so the night is exactly as it was.
+  // nowhere left to go, so the line work reads as cold lace on warm ground.
   // It is taken off the brightest channel and applied to all three together. Rolled off
   // channel by channel it eats the red first, which is the colour of the light: a flank
   // with the sun full on it came out white, and a white mountain at sunrise is a snowfield
   // at noon. This way a highlight keeps its hue all the way up and only loses intensity.
+  // Below .72 nothing is touched at all. Above it the night moves a little too - a crag
+  // square to the moon loses about a twentieth of its red - because the roll-off now scales
+  // the three channels together where it used to take each in turn; it is the same shoulder
+  // on the same highlights, and at the top of the night scale it reads as slightly cooler.
   float mx = max(col.r, max(col.g, col.b));
   float ov = max(mx - .72, 0.);
   col *= mx > 1e-4 ? 1. - (ov * ov / (ov + .30)) / mx : 1.;
@@ -875,11 +936,9 @@ vec3 winTint(float hut, float face, float s, float c){
   float h = hh(vec4(face + 2., s + 9., c, hut));
   return h < .16 ? vec3(1., .46, .20) * .62 : mix(vec3(1., .62, .31), vec3(1., .80, .54), h);
 }
-// the fog and the dawn of the land, so a building sits in the same air as its hillside
-vec3 airOf(float d, float dawn){ return mix(vec3(.040, .064, .102), airAt(.5), dawn); }
-// and the same again for a wall that knows which way it is being looked at, so a hut a mile
-// off fades into the lit air on the sun's side and the cold air away from it, as its own
-// hillside does
+// the fog and the dawn of the land, so a building sits in the same air as its hillside -
+// and the wall knows which way it is being looked at, so a hut a mile off fades into the
+// lit air on the sun's side and into the cold away from it, exactly as its own slope does
 vec3 airOf(float d, float dawn, vec2 vdir){ return mix(vec3(.040, .064, .102), airAt(towardSun(vdir)), dawn); }
 float fogOf(float d, float dawn){ return smoothstep(mix(46., 75., dawn), mix(236., 255., dawn), d) * (.74 - dawn * .36); }
 float quietOf(vec4 P, float K){
@@ -1036,12 +1095,25 @@ void main(){
   // the long way through the air, and for everything out of its reach the blue-violet of
   // the sky. A wall in shadow at sunrise is cold, not brown.
   vec3 sunCol = mix(vec3(1., .34, .18), vec3(1., .64, .40), smoothstep(.28, 1.7, uDawn));
-  vec3 day = alb * (vec3(.125, .150, .250) * (.40 + .60 * sky) + vec3(.075, .060, .058) * fill
-      + sunCol * (lit * 1.45 + pow(clamp(dot(N, sunD) * .56 + .44, 0., 1.), 2.4) * sun * .16))
+  // The sky a building on the summit stands in is not the sky one in the basin stands in.
+  // Up there the whole eastern quarter is alight and nothing is in the way of it; down in
+  // the valley the ridge holds that light out for another quarter of an hour. So the shaded
+  // side of the observatory is lilac at this moment and the shaded side of a hut in the
+  // woods is still blue - and the discs, which are flat plates open to all of it, take the
+  // grazing sun and that lit quarter of sky together and are the first warm thing up there.
+  vec3 ambD = mix(vec3(.125, .150, .250), vec3(.205, .158, .208), smoothstep(.45, 1., alt) * sun);
+  vec3 day = alb * (ambD * (.40 + .60 * sky) + vec3(.075, .060, .058) * fill
+      + sunCol * (lit * 1.45 + pow(clamp(dot(N, sunD) * .56 + .44, 0., 1.), 2.4) * sun * .24))
     // and off the glass: the observatory's bands and the panes of an east wall take the sun
     // as a reflection and not as a shading, which from the Silesian side is the first thing
     // on the mountain to light up
-    + sunCol * pow(max(dot(reflect(-sunD, N), V), 0.), 26.) * gloss * (.55 + .85 * lit) * sun * shd;
+    + sunCol * pow(max(dot(reflect(-sunD, N), V), 0.), 26.) * gloss * (.55 + .85 * lit) * sun * shd
+    // and a mirror does not only return the disc. The bands on the observatory give back the
+    // whole lit quarter of the sky, hardest where they are seen most nearly edge-on, which
+    // is why a glazed thing on a summit changes colour a good quarter of an hour before the
+    // rock it stands on does - and why the three discs come up warm while the cone they
+    // stand on is still in shadow.
+    + sunCol * gloss * pow(1. - max(dot(N, V), 0.), 2.4) * sun * (.085 + .175 * shd);
   vec3 col = mix(night, day, uDawn);
   // the shoulder off the brightest channel and not off each in turn, as on the land: rolled
   // off channel by channel it takes the red out of the light first, and a wall with the
@@ -1119,7 +1191,7 @@ function start(bake, gl) {
   const UL = uni(land, ['uMap', 'uAux', 'uVP', 'uRect', 'uTexel', 'uCam', 'uMoon', 'uLamp', 'uLampOn', 'uDawn', 'uReveal', 'uBeat', 'uGain', 'uLit', 'uFine', 'uPanel', 'uPanelK', 'uPre', 'uTop']);
   const UP = uni(dots, ['uVP', 'uScale', 'uDawn', 'uMoonS', 'uDpr', 'uCamP', 'uPass']);
   const UR = uni(ribs, ['uVP', 'uPix', 'uWid', 'uCol', 'uDawn', 'uReveal', 'uCam', 'uWarm', 'uPanel', 'uPanelK', 'uShore', 'uShoreD', 'uT', 'uWalk']);
-  const US = uni(sky, ['uRx', 'uRy', 'uFw', 'uMoon', 'uDawn', 'uPre']);
+  const US = uni(sky, ['uRx', 'uRy', 'uFw', 'uMoon', 'uDawn', 'uPre', 'uPanel', 'uPanelK']);
   const skyVao = gl.createVertexArray();      // three vertices made out of gl_VertexID alone
 
   // the sheet: a grid of (u, v) points, displaced in the vertex shader
@@ -1680,16 +1752,26 @@ function start(bake, gl) {
     // on a phone the words lie over the map: fade the drawing under the block they occupy,
     // so a contour never runs through a line of type. A wide screen has room and keeps all
     // of its lines - the panel's own scrim is enough there.
-    let panelK = 0;
-    if (portrait() && rects.length) {
+    // The sky is the exception, and it is the exception at every width. Its scrim was sized
+    // against a dark wash, and once the sky became a sunrise the brightest thing in the
+    // whole frame stood behind the smallest type in it. So the sky takes the rectangle
+    // wherever there are words, desktop as well as phone; the drawing underneath still only
+    // goes quiet where the words actually cover it, which is on a phone.
+    let panelK = 0, skyK = 0;
+    if (rects.length) {
       let l = 1e9, r = -1e9, t = 1e9, b = -1e9;
       for (const q of rects) { l = Math.min(l, q.left); r = Math.max(r, q.right); t = Math.min(t, q.top); b = Math.max(b, q.bottom); }
       const sc = canvas.height / ch;
-      gl.useProgram(land); gl.uniform4f(UL.uPanel, (l - 14) * sc, (ch - b - 18) * sc, (r + 14) * sc, (ch - t + 18) * sc);
-      gl.useProgram(ribs); gl.uniform4f(UR.uPanel, (l - 14) * sc, (ch - b - 18) * sc, (r + 14) * sc, (ch - t + 18) * sc);
-      gl.useProgram(bld); gl.uniform4f(UB.uPanel, (l - 14) * sc, (ch - b - 18) * sc, (r + 14) * sc, (ch - t + 18) * sc);
-      gl.useProgram(dec); gl.uniform4f(UD.uPanel, (l - 14) * sc, (ch - b - 18) * sc, (r + 14) * sc, (ch - t + 18) * sc);
-      panelK = 1;
+      const px = [(l - 14) * sc, (ch - b - 18) * sc, (r + 14) * sc, (ch - t + 18) * sc];
+      gl.useProgram(sky); gl.uniform4f(US.uPanel, px[0], px[1], px[2], px[3]);
+      skyK = 1;
+      if (portrait()) {
+        gl.useProgram(land); gl.uniform4f(UL.uPanel, px[0], px[1], px[2], px[3]);
+        gl.useProgram(ribs); gl.uniform4f(UR.uPanel, px[0], px[1], px[2], px[3]);
+        gl.useProgram(bld); gl.uniform4f(UB.uPanel, px[0], px[1], px[2], px[3]);
+        gl.useProgram(dec); gl.uniform4f(UD.uPanel, px[0], px[1], px[2], px[3]);
+        panelK = 1;
+      }
     }
 
     // The lights come on one at a time as the land rises under them - low huts first, with
@@ -1755,14 +1837,15 @@ function start(bake, gl) {
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     // the sky first, across the whole frame and writing no depth, so the crest has something
-    // to stand against. It empties out as the dawn comes up behind the canvas.
+    // to stand against. It is opaque at every hour: the night sky is drawn here and so is
+    // the sunrise, and nothing behind the canvas is ever meant to show through.
     gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
     gl.useProgram(sky);
     gl.uniform3f(US.uFw, fwd[0], fwd[1], fwd[2]);
     gl.uniform3f(US.uRx, right[0] * basis.th * aspect, right[1] * basis.th * aspect, right[2] * basis.th * aspect);
     gl.uniform3f(US.uRy, up[0] * basis.th, up[1] * basis.th, up[2] * basis.th);
     gl.uniform3f(US.uMoon, MOON[0], MOON[1], MOON[2]);
-    gl.uniform1f(US.uDawn, dawn); gl.uniform1f(US.uPre, pre);
+    gl.uniform1f(US.uDawn, dawn); gl.uniform1f(US.uPre, pre); gl.uniform1f(US.uPanelK, skyK);
     gl.bindVertexArray(skyVao); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
     gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
 
