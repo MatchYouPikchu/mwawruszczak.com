@@ -531,13 +531,21 @@ void main(){ vK = aK; vA = aA; vQ = aQ;
   // stands on, so the hillside never cuts into the building and the building never floats.
   vec3 P = aPos;
   if (k >= 6 && k <= 9) P += normalize(uCamP - aPos) * .55;
+  // A headlamp can carry the same nudge in aQ. The walk of the finale is drawn at head
+  // height on the buildings' own scale - a metre or two off the ground, level with the door
+  // it comes out of - and a sprite that low dips in and out of the hillside it is walking
+  // over. This leaves it exactly where it was on screen and in front of the slope.
+  else if (k == 0 && aQ > 0.) P += normalize(uCamP - aPos) * aQ;
   vec4 c = uVP * vec4(P, 1.); gl_Position = c;
   vNear = smoothstep(NF[k], NN[k], max(c.w, .1));
   // A shelter's halo opens out as the camera closes in - far more than perspective alone
   // would give it. That is honest: the glow in the air round a hut is hundreds of metres
   // wide and only resolves into air when you are near enough for it to have any size.
   float sz = SZ[k] * (k == 6 || k == 7 ? 1. + .80 * vNear : k == 10 ? .50 + 1.25 * aQ : 1.);
-  float px = clamp(sz * uScale.x / max(c.w, .1), MN[k] * uScale.y, MX[k] * uScale.y * uScale.z);
+  // the walk of the finale is seen from seven kilometres back at the landing and has to be
+  // a light there and not a speck, so those headlamps are allowed a little more room
+  float mx = k == 0 && aQ > 0. ? 9.2 : MX[k];
+  float px = clamp(sz * uScale.x / max(c.w, .1), MN[k] * uScale.y, mx * uScale.y * uScale.z);
   // The relay keeps a size in the world, with its foot on the rim, so it stands on the land
   // and not over it. The limits keep it legible far off and from turning into a model close in.
   float hutPx = 0.;
@@ -585,6 +593,10 @@ void main(){
     // sits above the crest and is read as a light and not as a dot
     if (k == 3) c += vec3(1., .27, .12) * smoothstep(.21, 0., r) * 1.35 + vec3(.95, .17, .07) * exp(-r * r * 8.) * .55;
     c = warmth(c) * edge;          // at first light nothing stays cool, not even a headlamp
+    // except the walk of the finale, which is close enough to read as what it is: the slope
+    // round those lamps turns orange as the sun comes up and a headlamp does not, and that
+    // difference is the only thing keeping them visible once it is light
+    if (k == 0 && vQ > 0.) c = vec3(1., .93, .84) * max(max(c.r, c.g), c.b) * 1.08;
     o = vec4(c * vA, max(c.r, max(c.g, c.b)) * vA); return;
   }
   if (k == 6 || k == 7 || k == 8) {
@@ -718,6 +730,7 @@ precision highp float;
 in vec3 vP; in vec3 vN; in vec2 vUv; flat in vec4 vInf; flat in vec3 vFt;
 uniform vec3 uMoon; uniform float uDawn; uniform float uPre; uniform vec3 uCam; uniform float uT;
 uniform float uReveal; uniform vec4 uHut[24]; uniform vec4 uPanel; uniform float uPanelK;
+uniform float uDoor[24];   // how far each hut's front door stands open, for the walk below it
 out vec4 o;
 ${WIN}
 void main(){
@@ -759,7 +772,9 @@ void main(){
       vec3 tint = winTint(fh, face, s, cx.x);
       // the glazing bars, where there is room to see them
       float bars = min(1., smoothstep(.05 + px, .025, abs(cx.y)) + smoothstep(.05 + px, .025, abs(y - cy - .22))) * smoothstep(.10, .04, px);
-      float bri = s < .5 ? 1.2 * H.z : 1.;               // the room with the stove in it breathes
+      // the room with the stove in it breathes, and while the door is open it is the room a
+      // party is standing in with its boots on, so it burns harder than the rest of the house
+      float bri = s < .5 ? 1.2 * H.z * (1. + .50 * uDoor[hut]) : 1.;
       em += tint * pane * lit * bri * (1. - .8 * bars) * 1.5 * detail;
       // and the light it puts on its own wall round it
       em += tint * lit * exp(-max(d, 0.) / .5) * (1. - pane) * .10 * detail;
@@ -775,6 +790,16 @@ void main(){
       float door = (1. - smoothstep(.62, .62 + px, abs(du))) * step(0., v) * (1. - smoothstep(2.25, 2.25 + px, v));
       alb = mix(alb, vec3(.09, .065, .045), door);
       em *= 1. - door;
+      // An hour before the sun it stands open while a party goes out. The leaf swings back
+      // off its hinge at one side and what is behind it is the lit passage, which for as
+      // long as that lasts is the brightest thing anywhere on the building - a hut with its
+      // door open reads differently from a hundred metres off, and that is the whole point.
+      float dk = uDoor[hut];
+      float leaf = 1. - smoothstep(-.62 + 1.24 * dk, -.62 + 1.24 * dk + px + .05, du);
+      em += vec3(1., .67, .35) * door * leaf * 2.4 * H.x * (.70 + .30 * smoothstep(0., 2.2, v));
+      // and the jamb and the render beside it, taking what comes out
+      float sd = max(max(abs(du) - .74, -v - .15), v - 2.6);
+      em += vec3(1., .62, .30) * dk * H.x * exp(-max(sd, 0.) / .55) * .50 * (1. - door);
       vec2 lq = vec2(du, v - 2.75);
       em += vec3(1., .76, .46) * exp(-dot(lq, lq) / max(.035, px * px * 2.)) * 2.4 * H.x * (1. - .85 * H.y);
     }
@@ -866,6 +891,7 @@ precision highp float;
 in vec3 vP; in vec2 vL; flat in vec4 vW; flat in vec2 vF;
 uniform vec4 uHut[24]; uniform float uT; uniform float uDawn; uniform float uReveal; uniform vec3 uCam;
 uniform vec4 uPanel; uniform float uPanelK;
+uniform float uDoor[24];   // how far each hut's front door stands open
 out vec4 o;
 ${WIN}
 float wallLight(float d, float t, float hl, float face, float hut, float lv, vec4 H, vec2 ws){
@@ -889,11 +915,24 @@ void main(){
   float L = wallLight(vL.y - hb, vL.x, ha, f0, hut, lv, H, ws) + wallLight(-vL.y - hb, vL.x, ha, f0 + 1., hut, lv, H, ws)
           + wallLight(vL.x - ha, vL.y, hb, f0 + 2., hut, lv, H, ws) + wallLight(-vL.x - ha, vL.y, hb, f0 + 3., hut, lv, H, ws);
   // the door lamp, on the front of the main wing
-  if (f0 < .5) { vec2 dq = vec2(vL.x + ha * .3, vL.y - hb - 1.2); L += 1.1 * exp(-dot(dq, dq) / 5.) * H.x * (1. - .85 * H.y); }
-  L *= 1. - smoothstep(9., 13., max(abs(vL.x) - ha, abs(vL.y) - hb));
+  float Ld = 0.;
+  if (f0 < .5) {
+    vec2 dq = vec2(vL.x + ha * .3, vL.y - hb - 1.2); L += 1.1 * exp(-dot(dq, dq) / 5.) * H.x * (1. - .85 * H.y);
+    // and, while the door stands open, the wedge the lit passage lays on the ground in front
+    // of it: the width of the doorway at the threshold, opening out as it goes and running
+    // out at about the length of the building. It is the one thing a shut hut never has.
+    float dn = vL.y - hb, dt = vL.x + ha * .3, w = .62 + dn * .46;
+    Ld = step(0., dn) * (1. - smoothstep(w - .3, w + .9, abs(dt))) * exp(-dn / 6.)
+       * smoothstep(-.5, .8, dn) * uDoor[int(hut + .5)] * H.x;
+  }
+  float edge = 1. - smoothstep(9., 13., max(abs(vL.x) - ha, abs(vL.y) - hb));
+  L *= edge; Ld *= edge;
   float d = length(vP - uCam), fog = fogOf(d, uDawn);
-  float k = smoothstep(vP.y - 1.6, vP.y, uReveal) * H.w * (1. - .78 * uDawn) * (1. - fog) * (1. - quietOf(uPanel, uPanelK) * .75);
-  vec3 c = vec3(1., .56, .26) * L * .62 * k;
+  float k = smoothstep(vP.y - 1.6, vP.y, uReveal) * H.w * (1. - fog) * (1. - quietOf(uPanel, uPanelK) * .75);
+  // the pools the windows throw give way to the morning; the open door is a stronger light
+  // than any of them and holds on through it, which is what lets the leaving happen late
+  vec3 c = vec3(1., .56, .26) * L * .62 * k * (1. - .78 * uDawn)
+         + vec3(1., .60, .30) * Ld * 1.9 * k * (1. - .42 * uDawn);
   o = vec4(c / (1. + c * .6), 0.);
 }`;
 
@@ -1141,8 +1180,8 @@ function start(bake, gl) {
       face4([C(i0, j0, 19), C(i1, j1, 19), C(i1, j1, 26), C(i0, j0, 26)], n, [0, 1, 1, 0], [0, 0, 1, 1], [.7, 3, OBG, 3], [99, 3, 0]);
   }
   const bld = program(BVS, BFS), dec = program(DVS, DFS);
-  const UB = uni(bld, ['uVP', 'uMoon', 'uDawn', 'uPre', 'uCam', 'uT', 'uReveal', 'uHut', 'uPanel', 'uPanelK']);
-  const UD = uni(dec, ['uVP', 'uHut', 'uT', 'uDawn', 'uReveal', 'uCam', 'uPanel', 'uPanelK']);
+  const UB = uni(bld, ['uVP', 'uMoon', 'uDawn', 'uPre', 'uCam', 'uT', 'uReveal', 'uHut', 'uPanel', 'uPanelK', 'uDoor']);
+  const UD = uni(dec, ['uVP', 'uHut', 'uT', 'uDawn', 'uReveal', 'uCam', 'uPanel', 'uPanelK', 'uDoor']);
   const mkMesh = (prog, V, I, stride, attrs) => {
     const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(V), gl.STATIC_DRAW);
@@ -1240,7 +1279,70 @@ function start(bake, gl) {
     ['ascent', 12, .82], ['ascent', 25, 1.08], ['ascent', 38, .88], ['ridge', 3, 1.35],
     ['ridge', 31, 1.10], ['ridge', 60, 1.28]]
     .map(([k, off, sp], i) => ({ path: TP[k], off, sp, ph: i * 1.7 }));
+
+  // ---------------- the sunrise walk ----------------
+  // An hour before it happens the huts under Śnieżka empty. Somebody puts the light on in
+  // the passage, the door opens on a wedge of it, and a party goes out in the dark for the
+  // summit, to be standing on it when the sun is. Three of them are on the Karpacz trail in
+  // this sheet - Samotnia on its tarn, Strzecha Akademicka a few minutes above it, Dom
+  // Śląski on the saddle at the foot of the cone - and that trail ends on the top, which is
+  // where the last flight ends. So the finale is their walk, scroll for scroll: each party
+  // leaves at its own moment and goes at its own pace, and by the time the camera lands
+  // there is a thread of headlamps on the zig-zags and a few people already up there with
+  // nothing to do but wait. All of it is read off how far down the page you are and never
+  // off the clock, so one frame of it is the same picture every time it is drawn.
+  // Luční bouda and the Czech huts are left out of it: the survey has no path from them to
+  // this trail, and a party walking across open hillside would be a lie about the ground.
+  const KARP = TP.karpacz;
+  // where a trail passes nearest a point, as an arc length: where somebody stepping out of a
+  // door joins it, which is not quite the waypoint the survey hangs the hut's name on
+  const joinAt = (path, x, z) => {
+    const { P, acc } = path;
+    let b = { s: 0, d: 1e9, x, z };
+    for (let i = 0; i < P.length - 1; i++) {
+      const ax = P[i][0], az = P[i][1], bx = P[i + 1][0] - ax, bz = P[i + 1][1] - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * bx + (z - az) * bz) / (bx * bx + bz * bz || 1e-9)));
+      const qx = ax + bx * t, qz = az + bz * t, d = Math.hypot(x - qx, z - qz);
+      if (d < b.d) b = { s: acc[i] + (acc[i + 1] - acc[i]) * t, d: Math.max(.04, d), x: qx, z: qz };
+    }
+    return b;
+  };
+  // the front door of a hut's main wing, on the land: three tenths of the way along the
+  // front wall of wing 0 from its middle, a stride outside it - exactly where the building
+  // shader draws the door and the decal lays the wedge, so the two cannot drift apart
+  const doorOf = i => {
+    const w = wingsOf(SH[i])[0] || { x: SH[i].x, z: SH[i].z, A: [1, 0], B: [0, 1], ha: 0, hb: 0, m: 0 };
+    const x = w.x + (w.A[0] * -w.ha * .3 + w.B[0] * (w.hb + 1.5)) * w.m;
+    const z = w.z + (w.A[1] * -w.ha * .3 + w.B[1] * (w.hb + 1.5)) * w.m;
+    return [x, heightAt(x, z), z];
+  };
+  // Who goes, and when. Each party is a hut and, for every person in it: the moment they
+  // step out (0 where the last flight starts, 1 where it lands), how fast they walk in trail
+  // units, how bright their lamp is, how far down the page they switch it off and how much
+  // of it they keep when they do. The first party is away long before the camera is near
+  // enough to see the door move; they are the ones standing by the observatory at the end.
+  // The other three leave into the frame, as the camera comes down over their roofs.
+  // The paces run from 9 to 31, which is as wide as it looks and is the point: the ones who
+  // come from the far huts are the ones who got up in the dark and move, and the last out of
+  // Dom Śląski are on the steepest ground on the hill with four hundred metres of cone in
+  // front of them. That spread is what strings them out instead of marching them up in step.
+  const PARTY = [
+    { hut: 16, go: [[.090, 31, 1.35, .70, .35], [.115, 29, 1.15, .80, 0], [.145, 27, 1.30, .88, .45], [.175, 25, 1.20, 1.2, 1]] },
+    { hut: 15, go: [[.500, 27, 1.30, 1.3, 1], [.570, 26, 1.05, 1.3, 1], [.640, 24, 1.20, 1.3, 1], [.720, 22, 1.00, 1.3, 1]] },
+    { hut: 16, go: [[.800, 30, 1.25, 1.3, 1], [.835, 22, 1.00, 1.3, 1], [.875, 17, 1.15, 1.3, 1]] },
+    { hut: 17, go: [[.780, 21, 1.35, .86, .35], [.800, 20, 1.10, .97, .45], [.825, 18, 1.25, 1.2, 1], [.850, 15, 1.05, 1.2, 1], [.875, 9, 1.20, 1.2, 1]] },
+  ].map((p, i) => {
+    const d = doorOf(p.hut), q = joinAt(KARP, d[0], d[2]);
+    return {
+      ...p, d, j: [q.x, q.z], s0: q.s, lk: q.d, top: KARP.L, sc: i * 3,
+      o0: Math.min(...p.go.map(g => g[0])) - .050,     // the door opens on the first of them
+      o1: Math.max(...p.go.map(g => g[0])) + .045,     // and shuts behind the last
+    };
+  });
+  for (const p of PARTY) AG.push(p);               // they ride in the walkers' own buffer
+  const DOOR = new Float32Array(24);               // how far each hut's door stands open
   const TAIL = 5, AN = AG.length * TAIL;
+  const PA0 = AN - PARTY.length * TAIL;            // where the walk starts in that buffer
   const SN0 = AN + PTS.length;                    // where the smoke starts in the buffer
 
   const ap = new Float32Array((SN0 + SMOKE.length) * 6);
@@ -1261,8 +1363,47 @@ function start(bake, gl) {
     const x = P[k][0] + (P[k + 1][0] - P[k][0]) * t, z = P[k][1] + (P[k + 1][1] - P[k][1]) * t;
     return [x, heightAt(x, z) + .3, z];
   };
-  const placeAgents = (time, gain) => {
+  // One party of the sunrise walk, put on the hill by the scroll alone. Each of them is at
+  // the door until their moment, walks the few steps from it onto the trail, and then goes
+  // up. The ones that get to the top stop there and stand about round the observatory, and
+  // their lamps go off one at a time as the light arrives - highest first, which is where it
+  // lands first; the ones still climbing in the shadow of the cone keep theirs.
+  // Their lamp is a point of kind 0 like every other walker's, with the nudge towards the
+  // camera in aQ, so nothing else in the buffer or in the draw ranges has to know about them.
+  // where they stand once they are up: the summit of Śnieżka is a hundred metres of stony
+  // plateau with the observatory on it, and people wait on the side they came up
+  const SCAT = [[.20, .06], [.05, .23], [.13, .13], [.29, .20], [.08, .33]];
+  const LIFT = .055;              // head height, on the scale the buildings are drawn at
+  const placeParty = (g, base, time, story, fade, gain) => {
+    for (let k = 0; k < TAIL; k++) {
+      const o = (base + k) * 6, m = g.go[k];
+      ap[o + 5] = .32;                                   // the nudge, so it never sinks in
+      if (!m) { ap[o + 3] = 0; continue; }
+      const u = (story - m[0]) * m[1];                   // how far they have walked by now
+      let x = g.d[0], z = g.d[2], a = 0;
+      if (u > 0) {
+        if (u < g.lk) { const t = u / g.lk; x += (g.j[0] - x) * t; z += (g.j[1] - z) * t; }
+        else {
+          const s = g.s0 + u - g.lk, p = along(KARP, Math.min(g.top, s));
+          const arr = c01((s - g.top) / .6 + 1);         // fanning out as they come up to it
+          const sc = SCAT[(k + g.sc) % SCAT.length];
+          x = p[0] + sc[0] * arr; z = p[2] + sc[1] * arr;
+        }
+        // out of a lit doorway into the dark, and out again when the day reaches them
+        a = m[2] * c01(u / .14) * (1 - (1 - m[4]) * sst(m[3], m[3] + .09, fade)) * gain;
+        // A lamp seven kilometres off never sits still: the head it is strapped to turns, and
+        // that much air between puts a slow scintillation on it. Two rates, so no two of them
+        // are ever in step and the line reads as people rather than as a string of bulbs.
+        if (!reduce) a *= .84 + .10 * Math.sin(time * 2.1 + m[0] * 53.) + .06 * Math.sin(time * 3.7 + m[0] * 121.);
+      }
+      ap[o] = x; ap[o + 2] = z;
+      ap[o + 1] = heightAt(x, z) + LIFT + (reduce ? 0 : Math.sin(time * 4.1 + m[0] * 31.) * .02);
+      ap[o + 3] = a;
+    }
+  };
+  const placeAgents = (time, gain, story, fade, walkK) => {
     AG.forEach((g, i) => {
+      if (g.go) return placeParty(g, i * TAIL, time, story, fade, walkK);   // the sunrise walk
       const L = g.path.L, s0 = (time * g.sp + g.off) % (L + 6);
       // a headlamp rides on somebody's forehead, so it rises and falls with the stride
       const bob = reduce ? 0 : Math.sin(time * 4.3 + g.ph) * .035;
@@ -1460,6 +1601,10 @@ function start(bake, gl) {
     // how far along the crest the walk has come: nowhere before the last flight, the whole
     // trail to the summit once it lands
     const walk = cur <= n - 2 ? 0 : (c.arc === undefined ? TP.ridge.L : c.arc);
+    // and how far the sunrise walk has got: the doors and the parties on the trail below the
+    // summit are read off this alone, so the whole of it plays as the page is scrolled and
+    // a still of it is the same picture every time
+    const story = c01(cur - (n - 2));
     // The hour before. The sky in the east comes up a stop at a time, so the sun at the last
     // stop finishes something that started on the first screen instead of arriving from
     // nowhere. It is full by the fourth stop, where the dawn itself takes the picture over.
@@ -1511,6 +1656,11 @@ function start(bake, gl) {
       live[i] = mdim[i] * breath[i];
     }
     const beacon = (reduce ? .8 : .20 + .80 * blink(time)) * (1 - dawn * .40) * (reduce ? 1 : sst(.06, .5, lu));
+    // The doors of the three huts the walk leaves from: open a moment before the first of a
+    // party goes out, shut again behind the last. Nothing else on this map opens or closes.
+    DOOR.fill(0);
+    for (const p of PARTY) DOOR[p.hut] = Math.max(DOOR[p.hut],
+      sst(p.o0, p.o0 + .035, story) * (1 - sst(p.o1, p.o1 + .055, story)));
     let warmS = 0, coolS = 0, townS = 0, townN = 0;
     for (let i = 0; i < PTS.length; i++) {
       const q = PTS[i], k = q[4];
@@ -1534,6 +1684,9 @@ function start(bake, gl) {
       }
       // a hut carries its breath in aQ instead, so only its panes and its pool move
       const home = k === 6 || k === 7;
+      // a door standing open puts more light into the air round a hut than all its windows
+      // together: from a ridge a kilometre off, that swell is what somebody leaving looks like
+      if (home) a *= 1 + .30 * DOOR[q[5]];
       if (q[5] >= 0) a *= home ? mdim[q[5]] : live[q[5]];
       const ao = (AN + i) * 6;
       ap[ao + 3] = a;
@@ -1614,7 +1767,7 @@ function start(bake, gl) {
     gl.useProgram(bld); gl.uniformMatrix4fv(UB.uVP, false, VP);
     gl.uniform3f(UB.uMoon, MOON[0], MOON[1], MOON[2]); gl.uniform1f(UB.uDawn, dawn); gl.uniform1f(UB.uPre, pre);
     gl.uniform3f(UB.uCam, eye[0], eye[1], eye[2]); gl.uniform1f(UB.uT, reduce ? 0 : time); gl.uniform1f(UB.uReveal, reveal);
-    gl.uniform4fv(UB.uHut, HU); gl.uniform1f(UB.uPanelK, panelK);
+    gl.uniform4fv(UB.uHut, HU); gl.uniform1f(UB.uPanelK, panelK); gl.uniform1fv(UB.uDoor, DOOR);
     gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.ALWAYS, 1, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
     gl.bindVertexArray(bvao); gl.drawElements(gl.TRIANGLES, BN, gl.UNSIGNED_INT, 0);
     gl.disable(gl.STENCIL_TEST);
@@ -1622,11 +1775,17 @@ function start(bake, gl) {
     gl.useProgram(dec); gl.uniformMatrix4fv(UD.uVP, false, VP);
     gl.uniform4fv(UD.uHut, HU); gl.uniform1f(UD.uT, reduce ? 0 : time); gl.uniform1f(UD.uDawn, dawn);
     gl.uniform1f(UD.uReveal, reveal); gl.uniform3f(UD.uCam, eye[0], eye[1], eye[2]); gl.uniform1f(UD.uPanelK, panelK);
+    gl.uniform1fv(UD.uDoor, DOOR);
     gl.depthMask(false); gl.blendFunc(gl.ONE, gl.ONE); gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1, -160);
     gl.bindVertexArray(dvao); gl.drawElements(gl.TRIANGLES, DN, gl.UNSIGNED_INT, 0);
     gl.disable(gl.POLYGON_OFFSET_FILL); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(true);
 
-    placeAgents(reduce ? 7 : time, hikeK);
+    // The general hikers dim as the day comes up; the sunrise walk keeps its own timing and
+    // only waits for the land to have arrived under it. Where it stands on the hill is read
+    // off the camera, which stops moving a little before the scroll does; when their lamps go
+    // out is read off the scroll itself, so the last of them go dark while the frame is
+    // already still and the words are being read, which is when it actually happens.
+    placeAgents(reduce ? 7 : time, hikeK, story, c01(p - (n - 2)), reduce ? 1 : sst(.45, 1.5, lu));
     placeSmoke(reduce ? 11 : time, shLit);
     gl.bindBuffer(gl.ARRAY_BUFFER, abuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, ap);
     gl.useProgram(dots); gl.uniformMatrix4fv(UP.uVP, false, VP); gl.uniform1f(UP.uDawn, dawn);
@@ -1645,8 +1804,15 @@ function start(bake, gl) {
     gl.drawArrays(gl.POINTS, AN, PTS.length);
     gl.blendFunc(gl.ONE, gl.ONE); gl.uniform1i(UP.uPass, 1);
     gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.NOTEQUAL, 1, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
-    gl.drawArrays(gl.POINTS, 0, SN0);
+    gl.drawArrays(gl.POINTS, 0, PA0);                // the hikers, then every light
+    gl.drawArrays(gl.POINTS, AN, PTS.length);
     gl.disable(gl.STENCIL_TEST);
+    // The sunrise walk goes on last and outside the stencil. Those lamps step out of a door
+    // and spend their first minutes within a few metres of a lit wall, often in front of it;
+    // the stencil that keeps the big halos off the walls would take them with it. They are
+    // small and hard-edged, so they can lie on a wall without smearing it, and anyone who is
+    // genuinely behind a hut is still hidden by the depth buffer.
+    gl.drawArrays(gl.POINTS, PA0, AN - PA0);
     gl.drawArrays(gl.POINTS, SN0, SMOKE.length);     // smoke can drift in front of a roof
     gl.depthMask(true); gl.bindVertexArray(null);
 
