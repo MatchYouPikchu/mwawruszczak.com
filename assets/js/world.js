@@ -29,6 +29,18 @@ const lonAt = x => LON0 - x / KX, latAt = z => LAT0 + z / KZ;
 const xOf = lon => (LON0 - lon) * KX, zOf = lat => (lat - LAT0) * KZ;
 const VS_REF = 300, VS_K = 0.0175;                      // height in units = (metres - 300) * k
 const hOf = m => (m - VS_REF) * VS_K;
+// The moon: 13 degrees up in the east, a little north of it - where a waning crescent stands
+// in the hours before the sun comes up in the same quarter. East is -x and north is +z, so
+// this rakes the length of the range instead of facing it: the north walls of the Śnieżne
+// Kotły are cut out of their own shadow, every spur throws one, and the Czech side of the
+// crest goes dark. Tried against the land at five bearings; nearer north flattens the
+// cirques, and from the west the stops look straight down the beam and lose their modelling.
+const MOON = (() => {
+  const d = (Q.get('moon') || '').split(',').map(Number);
+  const v = d.length === 3 && d.every(Number.isFinite) ? d : [-0.93, 0.26, 0.30];
+  const l = Math.hypot(...v) || 1;
+  return v.map(k => k / l);
+})();
 
 let F = null;            // the real features, fetched below
 let WAY = [], LABELS = [], GRAT = [];
@@ -57,7 +69,7 @@ function buildStory() {
     // the Śnieżne Kotły: the rim seen edge-on, with the relay on it and nothing else up there
     { t: [24, 16, -8], dist: 44, pitch: 9, yaw: 22, fov: 30, pt: [24.5, 16, -8], pd: 1.05, pp: 11, py: 24, pf: 37 },
     // the climb out of Szklarska Poręba to the Szrenica shelter
-    { t: [27, 11, 2], dist: 58, pitch: 38, yaw: -4, fov: 30, pt: [34, 9.6, 9], pd: .86, pp: 44, py: -14, pf: 36 },
+    { t: [27, 11, 2], dist: 58, pitch: 38, yaw: -4, fov: 30, pt: [34, 12.5, 6], pd: .86, pp: 40, py: -14, pf: 36 },
     // dawn: the range from the basin, first light from the east
     { t: [-17, 13, -19], dist: 104, pitch: 19, yaw: -5, fov: 30, pt: [-15, 13, -14], pd: .95, pp: 21, py: -12, pf: 40 },
   ];
@@ -68,20 +80,17 @@ function buildStory() {
     if (c.length === 7 && c.every(v => Number.isFinite(v))) WAY[STILL] = { t: c.slice(0, 3), dist: c[3], pitch: c[4], yaw: c[5], fov: c[6], pd: 1, pp: c[4], py: c[5], pf: c[6], pt: c.slice(0, 3) };
   }
 
+  // Only the story is written on the land. The range names itself to anyone who knows it,
+  // and to anyone who does not a caption reading ŚNIEŻKA 1603 m is a tourist sign nailed to
+  // a mountain: it tells them what to look at instead of letting them look.
   LABELS = [
-    { stop: [0], kind: 'place', mark: 'peak', at: [sn.x, sn.z], b: 'Śnieżka', s: '1603 m' },
-    { stop: [0], kind: 'place', mark: 'peak', at: [sr.x, sr.z], b: 'Szrenica', s: '1362 m' },
-    { stop: [0], kind: 'place', mark: 'town', at: [-32.6, -11.4], b: 'Karpacz' },
-    { stop: [0], kind: 'place', mark: 'town', at: [33.7, 11.9], b: 'Szklarska Poręba' },
-    { stop: [0], kind: 'place', mark: 'city', at: [-27, 41.5], b: 'Jelenia Góra', s: 'beyond the sheet' },
     { stop: [1], peak: [sr.x, sr.z], b: 'Ready now', i: 'close, and worth doing' },
     { stop: [1], peak: [sn.x, sn.z], b: 'The big bet', i: 'worth more, further away' },
     { stop: [2], at: [rt.x, rt.z], dy: 1.5, b: 'Background agents', i: 'working before anyone asks' },
     { stop: [3], at: kp, dy: .5, i: 'discovery' },
     { stop: [3], at: [ka.x, ka.z], dy: .5, i: 'rough prototype' },
     { stop: [3], at: [hs.x, hs.z], dy: .6, i: 'measured' },
-    { stop: [3], at: [sz.x, sz.z], dy: 1.6, b: 'Live', i: 'in production' },
-    { stop: [4], kind: 'place', mark: 'peak', at: [sn.x, sn.z], b: 'Śnieżka', s: '1603 m' },
+    { stop: [3], at: [sz.x, sz.z], dy: 1.1, b: 'Live', i: 'in production', stem: 78 },
   ];
 
   // a real graticule: every second arcminute, labelled where it leaves the sheet
@@ -110,6 +119,78 @@ const M = {
 };
 
 // ---------------- shaders ----------------
+// The sky, drawn first across the whole frame from the camera's own basis: deep at the
+// zenith, lifting to a cold band at the horizon so the crest in front of it reads as a
+// silhouette, with the moon where the land says it is. It gives way to the dawn behind it.
+const SVS = `#version 300 es
+precision highp float;
+out vec2 vNdc;
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vNdc = p * 2. - 1.;
+  gl_Position = vec4(vNdc, 1., 1.);
+}`;
+const SFS = `#version 300 es
+precision highp float;
+in vec2 vNdc;
+uniform vec3 uRx; uniform vec3 uRy; uniform vec3 uFw; uniform vec3 uMoon; uniform float uDawn;
+uniform float uPre;     // how far into the hour before sunrise: 0 at the first stop, 1 at the last
+out vec4 o;
+float h21(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract(p.x * p.y); }
+void main(){
+  vec3 d = normalize(uFw + vNdc.x * uRx + vNdc.y * uRy);
+  float up = d.y;
+  // above the skyline: deep overhead, lifting to a cold band at the horizon. Below it: the
+  // same air the far ridges are already fading into, so the edge of the sheet dissolves
+  // into distance instead of ending at a black wall.
+  // deep overhead, a cold band at the skyline so the crest is cut out of it, and below the
+  // skyline the colour the far ridges are already fading into - the stops that look down on
+  // the range from the basin see no horizon at all, and what is past the sheet should read
+  // as more air and more distance, not as a hole cut in the picture
+  vec3 zen = vec3(.016, .026, .050), hor = vec3(.088, .122, .172), deep = vec3(.040, .062, .098);
+  vec3 c = mix(hor, zen, pow(clamp(up, 0., 1.), .55));
+  c = mix(c, deep, smoothstep(.01, -.09, up));
+  c = mix(c, deep * .42, smoothstep(-.13, -.75, up));
+  // the moon is low and well off to one side at every stop, so what the sky shows of it is
+  // the glow it lays along the horizon in its own quarter, not the disc
+  vec2 md = normalize(uMoon.xz);
+  float az = max(dot(normalize(d.xz + vec2(1e-6)), md), 0.);
+  c += vec3(.085, .110, .160) * pow(az, 2.6) * exp(-max(up, 0.) * 7.) * .85;
+  float m = dot(d, uMoon);
+  c += vec3(.62, .68, .80) * pow(max(m, 0.), 1400.) * 2.4;   // the disc, if a stop ever turns to it
+  c += vec3(.20, .26, .38) * pow(max(m, 0.), 46.) * .45;     // the ring close around it
+  // The hour before. The sun is still well under the rim but it is coming up in this same
+  // quarter, behind Śnieżka at the east end of the range, and over the five stops the sky
+  // there stops being only moonlit. It is kept lower and much tighter than the moon's wash
+  // so the two read as different things: a cold glow standing over the whole east, and
+  // under it a thin warm line that was not there when the page opened.
+  // The east stands square to every stop on this flight: the camera looks south at the
+  // range and the sun will come up off its left shoulder, ninety degrees away, which is
+  // also where Śnieżka is. So this is not a patch of sky but a gradient across the whole
+  // dome, brightest where the frame runs out on the left. And it has to sit low: every
+  // stop looks down on the model, so the horizon is above the top of the picture and the
+  // sky anyone actually sees here is all of it below that line.
+  float azS = .5 + .5 * dot(normalize(d.xz + vec2(1e-6)), md);
+  float hgt = up + .12;
+  float prof = exp(-max(hgt, 0.) * 3.1) * exp(-max(-hgt, 0.) * 2.4) * smoothstep(-.70, -.34, up);
+  vec3 ember = mix(vec3(.052, .064, .086), vec3(.235, .105, .060), uPre * uPre);
+  float glow = prof * (pow(azS, mix(1.45, 1.95, uPre)) * (.78 + .46 * uPre) + pow(azS, 7.) * (.18 + .90 * uPre)) * (1. - uDawn);
+  // the blue goes out of the sky where this comes up, or the two together make violet, and
+  // violet over a silver range is a postcard
+  c = mix(c, c * vec3(1.18, 1., .74), min(1., glow * 2.4));
+  c += ember * glow;
+  // stars: a scatter, not a planetarium - thinned where the moon washes them out, gone below
+  // the skyline, and going out of their own accord as the sky in the east comes up
+  vec2 sp = d.xz / max(up, .07) * 34.;
+  vec2 ci = floor(sp), cf = fract(sp) - .5;
+  float keep = step(.9925, h21(ci));
+  float rad = length(cf - (vec2(h21(ci + 11.7), h21(ci + 4.3)) - .5) * .66);
+  float star = keep * smoothstep(.075, .010, rad) * (.40 + .60 * h21(ci + 2.1));
+  c += vec3(.76, .82, .95) * star * smoothstep(.004, .085, up) * (1. - .7 * pow(az, 3.))
+    * .62 * (1. - uPre * .72);
+  float a = 1. - uDawn;
+  o = vec4(c * a, a);
+}`;
 const VS = `#version 300 es
 precision highp float;
 in vec2 aUv;
@@ -124,13 +205,17 @@ void main(){
 const FS = `#version 300 es
 precision highp float;
 uniform sampler2D uMap; uniform sampler2D uAux;
-uniform vec2 uTexel; uniform vec4 uRect; uniform vec3 uCam;
+uniform vec2 uTexel; uniform vec4 uRect; uniform vec3 uCam; uniform vec3 uMoon;
 uniform vec3 uLamp; uniform float uLampOn; uniform float uDawn; uniform float uReveal;
 uniform float uBeat; uniform float uGain; uniform float uFine; uniform vec4 uPanel; uniform float uPanelK;
 uniform vec3 uLit;      // how brightly the shelters, the stations and the towns are burning
+uniform float uPre;     // how far into the hour before sunrise: 0 at the first stop, 1 at the last
 in vec2 vUv; in vec3 vW;
 out vec4 o;
 float iso(float v, float w){ float f = abs(fract(v - .5) - .5) / max(fwidth(v), 1e-4); return 1. - smoothstep(0., w, f); }
+float h12(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+  return mix(mix(h12(i), h12(i + vec2(1, 0)), f.x), mix(h12(i + vec2(0, 1)), h12(i + vec2(1, 1)), f.x), f.y); }
 void main(){
   // where the words are, the drawing goes quiet: on a phone the panel covers the map and a
   // contour through a line of type is the one place this map is harder to read than paper
@@ -149,20 +234,61 @@ void main(){
   float curv = clamp((h - (hl + hr + hd + hu) * .25) * 2.6, -1., 1.);
   float alt = smoothstep(7., 22.4, h);                       // 0 in the basin, 1 on the summit
   float reveal = smoothstep(h - 1.6, h, uReveal);
+  float dist = length(vW - uCam);
 
-  // night: a low moon in the north-north-west, so the front of the range faces the light
-  // and its Czech side falls away dark. dawn: the sun just north of east, very low.
-  float dn = clamp(dot(n, normalize(vec3(.36, .53, .77))), 0., 1.);
+  // night: a low moon raking in from the east-north-east, so the north faces and the
+  // headwalls of the Śnieżne Kotły are carved out of their own shadow and the Czech side of
+  // the crest falls away dark. dawn: the sun just north of east, very low.
+  float dn = clamp(dot(n, uMoon), 0., 1.);
   float dd = clamp(dot(n, normalize(vec3(-.95, .17, .26))), 0., 1.);
   // first light walks down the range: Śnieżka has it while the basin is still blue
   float sun = clamp((uDawn * 1.6 - .46 * (1. - alt)) / .55, 0., 1.);
-  vec3 base = mix(vec3(.020, .052, .060), vec3(.080, .164, .171), alt);
-  vec3 night = base * (.24 + dn * 2.05);
+  // Moonlight is a quarter of a millionth of noon, and the picture should say so: only a
+  // face turned square to the moon comes up to silver, everything a little off it falls
+  // away fast, and a slope that turns from it goes properly dark rather than the even grey
+  // a high lamp leaves on everything.
+  // Close in, the light is broken up by the ground the survey could not record: a 30 m grid
+  // gives a flank no scree, no heather and no crag, so under a raking light it comes out as
+  // pressed satin. The grain goes into the light rather than onto the colour, so it is the
+  // moon finding texture, strongest where the terminator runs and gone at hero distance.
+  float gk = smoothstep(92., 28., dist) * smoothstep(.18, 1.1, slope);
+  vec2 gq = vW.xz * 9.;                         // about a 27 m cell: scree, not weather
+  // and one octave cut on a vertical plane, or a slope laid out in plan stretches the grain
+  // down its own fall line and the flank comes out combed instead of rough
+  vec2 gh = vec2(vW.x * 6.4 + vW.z * 6.9, h * 9.);
+  float grain = ((vn(gq) - .5) + (vn(gq * 2.6) - .5) * .58 + (vn(gh) - .5) * .80) * gk;
+  float form = pow(clamp(dn + grain * .15, 0., 1.), 1.6);
+  float sky = clamp(n.y * .5 + .5, 0., 1.);        // how much open sky this face can see
+  // a glance of silver where the moon catches bare rock. Kept on the convex side only: tied
+  // to slope alone it picks out every fall line and lays comet streaks down the flanks.
+  float sheen = pow(dn, 6.) * smoothstep(1.5, 3.2, slope) * smoothstep(-.1, .55, curv);
+  // the basin keeps almost nothing; the crest keeps what the open sky gives it, so the range
+  // stands up out of its own valley before a single contour is drawn
+  vec3 shade = mix(vec3(.010, .019, .035), vec3(.031, .056, .084), alt);
+  vec3 silver = mix(vec3(.34, .45, .58), vec3(.78, .88, 1.02), alt);
+  // the sky itself is the fill, and what the snowfields opposite throw back is the rest of
+  // it: enough that a shaded flank keeps its shape, far too little to compete with the moon
+  float fill = clamp(dot(n, normalize(vec3(.62, .46, -.64))), 0., 1.);
+  vec3 night = shade * (.46 + sky * 1.30) + vec3(.016, .026, .044) * fill
+    + silver * (form * 1.06 + sheen * .30);
+  // The east is already a light, a long time before the sun is. It comes from exactly where
+  // the sun will - just under the moon, and rather lower - so it finds the same faces and
+  // adds nothing anywhere else; and over the five stops it goes from the colour of the sky
+  // to the colour of what is behind the sky. At the first stop it is a twentieth of the
+  // moon. By the fourth it is enough that the dawn, when it comes, finishes a sentence
+  // rather than starting one.
+  float de = clamp(dot(n, normalize(vec3(-.95, .12, .28))), 0., 1.);
+  vec3 ember = mix(vec3(.30, .42, .66), vec3(1., .49, .25), uPre * uPre);
+  night += ember * de * de * (.014 + .074 * uPre) * (1. - uDawn);
+  night += ember * pow(de, 8.) * (.010 + .055 * uPre) * (1. - uDawn);
+  // a shoulder on the highlights: a crag turned square to the moon should read as the
+  // brightest thing in the frame, not as a hole burnt through it
+  night /= 1. + night * .72;
   vec3 dawn = mix(vec3(.072, .066, .078), vec3(.185, .155, .145), alt) * (.30 + dd * 1.15 * sun)
     + vec3(1., .56, .32) * pow(dd, 2.) * .92 * sun;
   vec3 col = mix(night, dawn, uDawn);
-  col *= 1. + curv * .42;
-  col += mix(vec3(.028, .05, .055), vec3(.085, .05, .034), uDawn) * max(curv, 0.) * .55;
+  col *= 1. + curv * mix(.58, .42, uDawn);
+  col += mix(vec3(.030, .046, .062) * (.2 + form), vec3(.085, .05, .034), uDawn) * max(curv, 0.) * .55;
   // light spilling out of the valleys, the way a town lifts its own sky
   col += mix(vec3(1., .74, .46), vec3(.65, .52, .5), uDawn) * a.b * uLit.z * .18 * (1. - alt * .72);
 
@@ -173,49 +299,87 @@ void main(){
   // crowded lines are dropped, and harder at dawn: on a shaded headwall a cluster of them
   // goes pale against a warm range and reads as a tear in the picture instead of as rock
   float dens = clamp(1.3 - fwidth(f) * (.8 + uDawn * 1.3), 0., 1.);
-  float minor = iso(f, .85) * dens;
-  float fine = uFine * iso(f * 2., .8) * clamp(1.25 - fwidth(f * 2.) * .8, 0., 1.);
-  float major = iso(f / 5., .95) * clamp(1.35 - fwidth(f / 5.) * (.5 + uDawn * 1.1), 0., 1.);
+  // at night the lines are drawn finer: the moon is doing the describing and a heavy ring
+  // every fifty metres only corrugates the slope it is meant to explain
+  float minor = iso(f, mix(.56, .85, uDawn)) * dens;
+  float fine = uFine * iso(f * 2., mix(.52, .8, uDawn)) * clamp(1.25 - fwidth(f * 2.) * .8, 0., 1.);
+  float major = iso(f / 5., mix(.72, .95, uDawn)) * clamp(1.35 - fwidth(f / 5.) * (.5 + uDawn * 3.4), 0., 1.);
   // the soft band around an index line is dropped where the lines crowd, or a headwall
   // turns into a pale wash instead of rock
-  float halo = iso(f / 5., 4.5) * .085 * clamp(1.3 - fwidth(f / 5.) * 1.7, 0., 1.);
-  // the lines take the light with the ground: a shaded flank keeps its drawing, but quietly,
-  // so the massif has a form and is not a flat lace of rings
-  float ink = (.58 + .72 * alt) * mix(.42 + .78 * dn, .5 + .85 * dd * sun, uDawn) * (1. - quiet * .82);
+  float halo = iso(f / 5., 4.5) * mix(.030, .085, uDawn) * clamp(1.3 - fwidth(f / 5.) * 1.7, 0., 1.);
+  // the lines take the light with the ground, and at night they take it completely: a face
+  // the moon has left goes dark and keeps no drawing at all, so the relief is what carries
+  // the picture and the contours only sharpen what the light has already said. They fade
+  // with distance too, into the haze, instead of ruling the far ridge as hard as the near one.
+  // keyed off the raw light rather than the carved form: a shaded flank keeps a trace of its
+  // drawing - it is still a survey sheet - while a moonlit face is three or four times as
+  // strongly ruled, which is what stops the massif reading as corrugated plastic
   float lamp = uLampOn * smoothstep(14., 0., distance(vW.xz, uLamp.xz));
+  // the survey lamp brings the drawing back where it is held, even on a face the moon has
+  // left - that is what a lamp held over a sheet does, and it is the one way to read the
+  // contours in a shadowed cirque
+  float inkNight = (.15 + 1.05 * pow(dn, 1.2) + lamp * .62) * (.42 + .58 * smoothstep(250., 58., dist));
+  float ink = (.58 + .72 * alt) * mix(inkNight, .5 + .85 * dd * sun, uDawn) * (1. - quiet * .82);
   float warm = min(a.r * uLit.x, 1.), cool = min(a.g * uLit.y, 1.);
   // at first light the ink goes over to the warm ramp early and completely: a residual cool
   // term on a crowded headwall reads as a tear in the picture, not as shadowed rock
   float dw = smoothstep(0., .5, uDawn);
-  vec3 lc = mix(vec3(.31, .52, .48), vec3(.86, 1., .94), lamp);
+  vec3 lc = mix(mix(vec3(.50, .60, .74), vec3(.62, .60, .66), uPre * uPre * .8), vec3(.86, .94, 1.), lamp);
   lc = mix(lc, vec3(1., .74, .44), smoothstep(.03, .8, warm) * .95);
   lc = mix(lc, vec3(.76, .88, 1.), smoothstep(.03, .75, cool - warm) * .9);
-  lc = mix(lc, mix(vec3(.5, .4, .32), vec3(1., .84, .64), clamp(dd * 1.3 * sun + lamp, 0., 1.)), dw);
+  // At first light the ink is lit by the same sun as the ground it is drawn on, and it has
+  // to be warmer than that ground, not merely warm: the land goes to R/B near 1.9, and ink
+  // at 1.5 laid over it reads as mint lace - which is what a crowded headwall wore in the
+  // frame this whole film ends on.
+  lc = mix(lc, vec3(1., .67, .42) * (.52 + .72 * clamp(dd * 1.3 * sun + lamp, 0., 1.)), dw);
   float pulse = 1. + uBeat * .9;
   // the pools brighten the fine rings but barely the heavy fifth line, so a shelter is not
   // outshone by the lasso around it; and they favour level ground, so a lamp above a drop
   // lights a slope instead of flaring its crowded contours into a fan of stripes
   float wo = (warm + cool * .8) * (.25 + .75 * (1. - smoothstep(1.6, 3.2, slope)));
-  // the glow a lit window throws on the ground, cubed so it has no rim of its own
-  col += vec3(1., .42, .12) * warm * warm * warm * .11 * reveal;
-  col += lc * ((minor + fine * .62) * ink * (.52 + .5 * lamp + .55 * wo) + major * ink * (.60 + .45 * lamp + .18 * wo) * pulse
+  // The ground round a lit shelter. Two terms: the hot patch the windows throw on the
+  // stones just outside them, cubed so it has no rim of its own, and over a much wider
+  // radius the soft wash that is actually what you read from a mile off - a hut at night is
+  // a light with a piece of the mountain lit under it. Level ground keeps more of the wash
+  // than a drop does, so the light lies where it would lie.
+  col += vec3(1., .40, .11) * warm * warm * warm * .118 * reveal;
+  col += vec3(1., .50, .20) * warm * warm * (1. - .52 * smoothstep(1.7, 3.5, slope)) * .058 * reveal;
+  // The ink can only be as bright as the ground will take. At dawn a lit flank is already
+  // near the top of the scale, and a contour laid on at full weight runs all three channels
+  // through the ceiling at once - which is white. On a crowded headwall, where minor, fine
+  // and major all land together, that is how a copper range ends up wearing mint lace.
+  float head = clamp(1.04 - max(col.r, max(col.g, col.b)), 0., 1.);
+  float inkK = mix(1., .30 + .70 * head, dw);
+  col += lc * inkK * ((minor * mix(.84, 1., uDawn) + fine * .62) * ink * (.52 + .5 * lamp + .55 * wo) + major * ink * (.60 + .45 * lamp + .18 * wo) * pulse
     + halo * ink * (1. - uDawn * .55) * (.5 + lamp + .3 * wo) * pulse) * reveal * uGain;
-  // steep ground reads as rock: a cool grey, so a headwall is stone and not an absence
-  col += mix(vec3(.115, .128, .142), vec3(.135, .105, .086), uDawn) * smoothstep(1.8, 3.3, slope) * reveal;
+  // steep ground reads as rock: a cool grey, so a headwall is stone and not an absence - but
+  // at night only where the moon reaches it, or every crag in the range glows the same grey
+  col += mix(vec3(.085, .100, .125) * (.12 + 1.15 * form), vec3(.135, .105, .086), uDawn)
+    * smoothstep(1.8, 3.3, slope) * reveal;
   // the highest ground keeps a little starlight on it, and takes the sun first
-  col += mix(vec3(.055, .095, .105), vec3(.34, .22, .18), uDawn) * smoothstep(.55, 1., alt) * .55 * reveal;
+  col += mix(vec3(.040, .062, .088) * (.35 + .85 * form), vec3(.34, .22, .18), uDawn) * smoothstep(.55, 1., alt) * .55 * reveal;
 
   // the graticule, every second arcminute of real longitude and latitude
   vec2 g = vec2(469.2 - vW.x / 9.52063, 1524.0075 + vW.z / 14.96395);
-  col += vec3(.93, .9, .84) * max(iso(g.x, .8), iso(g.y, .8)) * .055 * reveal * (1. - quiet * .8);
+  col += mix(vec3(.80, .86, .96), vec3(.93, .9, .84), uDawn) * max(iso(g.x, .8), iso(g.y, .8))
+    * mix(.040, .055, uDawn) * reveal * (1. - quiet * .8);
 
   // the water takes the contours off the ground it covers; its surface is drawn over this
   float wet = smoothstep(.3, .7, a.a);
-  col = mix(col, mix(vec3(.026, .052, .072), vec3(.085, .062, .066), dw), wet * .95 * reveal);
+  col = mix(col, mix(vec3(.018, .038, .066), vec3(.085, .062, .066), dw), wet * .95 * reveal);
 
-  // depth haze, and the edge of the sheet fading out
-  float dist = length(vW - uCam);
-  col = mix(col, vec3(.028, .068, .076) + uDawn * vec3(.16, .085, .06), smoothstep(75., 255., dist) * (.68 - uDawn * .3));
+  // aerial perspective: the air between one ridge and the next, cold and a shade under the
+  // horizon sky so a far crest reads against it instead of dissolving into it
+  col = mix(col, mix(vec3(.040, .064, .102), vec3(.188, .153, .136), uDawn),
+    smoothstep(mix(46., 75., uDawn), mix(236., 255., uDawn), dist) * (.74 - uDawn * .36));
+  // A shoulder on the whole sheet. First light on a flank square to the sun is the
+  // brightest thing on this map and it should come up to the top of the scale, not go
+  // through it: without this the red channel pins across half the range at the last stop,
+  // every hue up there collapses to white, and a contour or a stream drawn over it has
+  // nowhere left to go, so the line work reads as cold lace on warm ground. Below .72
+  // nothing moves at all, so the night is exactly as it was.
+  vec3 ov = max(col - .72, 0.);
+  col -= ov * ov / (ov + .30);
   float e = min(min(vUv.x, 1. - vUv.x), min(vUv.y, 1. - vUv.y));
   float al = smoothstep(0., .085, e);
   o = vec4(col * al, al);
@@ -248,6 +412,9 @@ in float vArc; in float vSide; in float vW; in float vGlow; in vec3 vP;
 flat in int vSty;
 uniform vec4 uCol[8]; uniform float uDawn; uniform float uReveal; uniform vec3 uCam; uniform float uWarm;
 uniform vec4 uPanel; uniform float uPanelK;
+uniform vec4 uShore;    // the one shelter that stands on a shore: x, z, how brightly it burns
+uniform vec4 uShoreD;   // and the way its light lies out over the water, from here
+uniform float uT;
 out vec4 o;
 void main(){
   vec4 s = uCol[vSty];
@@ -262,8 +429,22 @@ void main(){
     float fres = pow(1. - clamp(V.y, 0., 1.), 3.);
     float rip = .62 + .38 * sin(vP.x * 8.3 + vP.z * 3.7) * sin(vP.z * 6.1 - vP.x * 2.9);
     rip = mix(1., rip, smoothstep(110., 45., d));
-    c = mix(c, vec3(.19, .31, .385) * rip, clamp(.42 + fres * .58, 0., 1.));
-    c += vec3(1., .45, .16) * vGlow * vGlow * uWarm * (.5 + fres * 1.3);
+    // looking down into it there is nothing to see; it is only where the sky skims off the
+    // surface that a tarn lights up at all, and that is what makes it water and not a plate
+    c = mix(c, vec3(.125, .185, .250) * rip, clamp(.10 + fres * .86, 0., 1.));
+    c += vec3(1., .45, .16) * vGlow * vGlow * uWarm * (.34 + fres * .9);
+    // Samotnia stands on the shore of Mały Staw, and on a still night its windows lie out
+    // across the water towards whoever is looking: not a wash over the surface but a column
+    // that broadens as it comes, cut into bars by the ripple, and never quite still.
+    vec2 toC = uShoreD.xy;
+    vec2 rel = vP.xz - uShore.xy;
+    float along = dot(rel, toC), across = dot(rel, vec2(-toC.y, toC.x));
+    float wid = .026 + .135 * max(along, 0.);
+    // it has to die out well before the far shore, or the column ends where the lake's
+    // outline ends and the whole thing reads as an orange wedge cut to fit a polygon
+    float lane = exp(-(across * across) / (wid * wid)) * exp(-max(along, 0.) * 2.45) * smoothstep(-.10, .03, along);
+    float trem = .20 + .80 * abs(sin(along * 34. - uT * 2.1 + sin(across * 15. + uT * .8)));
+    c += vec3(1., .52, .24) * lane * trem * uShore.z * uWarm * (1.15 + fres * 2.1);
     a *= 1. - vGlow * .2;
   } else {
     a *= clamp((1. - abs(vSide)) * vW, 0., 1.);
@@ -279,7 +460,8 @@ void main(){
   float lum = dot(c, vec3(.3, .59, .11));
   c = mix(c, vec3(lum) * vec3(1.35, 1., .72) + vec3(.05, .03, .02), dw);
   a *= smoothstep(vP.y - 1.6, vP.y, uReveal);
-  c = mix(c, vec3(.028, .068, .076) + uDawn * vec3(.16, .085, .06), smoothstep(75., 255., d) * (.68 - uDawn * .3));
+  c = mix(c, mix(vec3(.040, .064, .102), vec3(.188, .153, .136), uDawn),
+    smoothstep(mix(46., 75., uDawn), mix(236., 255., uDawn), d) * (.74 - uDawn * .36));
   vec2 u = vec2((vP.x + 60.) / 120., (45. - vP.z) / 90.);
   a *= smoothstep(0., .085, min(min(u.x, 1. - u.x), min(u.y, 1. - u.y)));
   if (uPanelK > 0.) a *= 1. - uPanelK * .75 * (1. - smoothstep(0., 110.,
@@ -288,59 +470,188 @@ void main(){
 }`;
 // every light and every built mark on the map, as one buffer and one draw call:
 // 0 a walker's headlamp, 1 a shelter window, 2 a station window, 3 the mast beacon,
-// 4 a light in a valley town, 5 the city beyond the north edge, and then the drawn marks -
-// 6 a shelter, 7 a smaller shelter, 8 the observatory on Śnieżka, 9 the relay mast.
-// The marks keep a size in pixels, so a hut stays a hut however far away the camera stands.
+// 4 a light in a valley town, 5 the city beyond the north edge, then the drawn marks -
+// 6 a shelter, 7 a smaller shelter, 8 the observatory on Śnieżka, 9 the relay mast - and
+// 10 a puff of chimney smoke. The marks keep a size in pixels, so a hut stays a hut
+// however far away the camera stands. aQ carries a puff's age, 0 for everything else.
 const PVS = `#version 300 es
-in vec3 aPos; in float aA; in float aK; uniform mat4 uVP; uniform vec2 uScale;
-out float vA; out float vK; out float vPx;
-const float SZ[10] = float[10](.52, .95, .8, 1.5, .78, 9., 3.1, 2.3, 3.0, 3.2);
-const float MN[10] = float[10](0., 0., 0., 7., 0., 0., 13., 9.5, 13., 14.);
-const float MX[10] = float[10](6.5, 11.5, 8., 17., 8., 54., 34., 22., 30., 34.);
-void main(){ vK = aK; vA = aA; vec4 c = uVP * vec4(aPos, 1.); gl_Position = c;
+in vec3 aPos; in float aA; in float aK; in float aQ; uniform mat4 uVP; uniform vec3 uScale;
+out float vA; out float vK; out float vPx; out float vNear; out float vQ; out float vHut;
+const float SZ[11] = float[11](.52, .95, .8, 1.5, .78, 9., 3.1, 2.3, 3.0, 3.2, 1.55);
+const float MN[11] = float[11](0., 0., 0., 7., 0., 0., 15., 11., 13., 14., 3.);
+// The halo is held to about twice the building it stands round. Wider than that and the
+// hut reads as a hat on a ball - a small dark glyph marooned in the middle of a lantern -
+// which is the one thing a schronisko never looks like from the valley.
+const float MX[11] = float[11](6.5, 13., 8., 17., 8., 54., 70., 52., 42., 46., 26.);
+// The range over which a mark stops being only a light. Far off, a shelter is what you
+// really see from the basin: a window burning, with the air glowing round it. Closer in,
+// the roof comes up as a shape in front of its own glow - never a lit model, just the
+// gable standing dark on its cushion of light. The observatory and the relay keep their
+// drawn outlines: those two shapes are the reason anyone looks up at that rim at all.
+// A puff of smoke uses the same pair as a fade, so it only shows where it could be seen.
+const float NF[11] = float[11](1., 1., 1., 1., 1., 1., 86., 78., 88., 88., 104.);
+const float NN[11] = float[11](0., 0., 0., 0., 0., 0., 48., 42., 44., 44., 50.);
+void main(){ vK = aK; vA = aA; vQ = aQ; vec4 c = uVP * vec4(aPos, 1.); gl_Position = c;
   int k = int(aK + .5);
-  gl_PointSize = vPx = clamp(SZ[k] * uScale.x / max(c.w, .1), MN[k] * uScale.y, MX[k] * uScale.y); }`;
+  vNear = smoothstep(NF[k], NN[k], max(c.w, .1));
+  // A shelter's halo opens out as the camera closes in - far more than perspective alone
+  // would give it. That is honest: the glow in the air round a hut is hundreds of metres
+  // wide and only resolves into air when you are near enough for it to have any size.
+  float sz = SZ[k] * (k == 6 || k == 7 ? 1. + 1.50 * vNear : k == 10 ? .50 + 1.25 * aQ : 1.);
+  gl_PointSize = vPx = clamp(sz * uScale.x / max(c.w, .1), MN[k] * uScale.y, MX[k] * uScale.y * uScale.z);
+  // the building itself is held at a fixed width in pixels inside that halo, so it stays a
+  // gable the size of a gable however wide the light around it has opened
+  vHut = clamp((k == 7 ? 25. : 34.) * uScale.y / max(vPx, 1.), .10, .60); }`;
 const PFS = `#version 300 es
-precision mediump float; in float vA; in float vK; in float vPx; uniform float uDawn; out vec4 o;
+precision mediump float;
+in float vA; in float vK; in float vPx; in float vNear; in float vQ; in float vHut;
+uniform float uDawn; uniform float uDpr; uniform vec2 uMoonS;   // the moon, in screen pixels
+out vec4 o;
 float seg(vec2 p, vec2 a, vec2 b){ vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0., 1.)); }
+float box(vec2 p, vec2 b){ vec2 d = abs(p) - b; return min(max(d.x, d.y), 0.) + length(max(d, 0.)); }
+float disc(vec2 p, vec2 c, vec2 r){ vec2 e = (p - c) / r; return (length(e) - 1.) * min(r.x, r.y); }
+// The building: a steep gable over a short body, with a flue just off the ridge. Not a
+// model and not a map symbol. Every schronisko up here is mostly roof, pitched to shed
+// four metres of snow - a shallow triangle hanging over a glow is a road sign, and a
+// triangle with nothing under it is a pictogram. So: a roof at 50 degrees, walls that
+// reach down into the pool of light the windows throw, and the panes cut out of the wall
+// (winsOf, subtracted) so that the light in this picture is coming from somewhere.
+// Signed, so the edge can be softened and a warm line hung under the eaves.
+float hutOf(vec2 p){
+  const float hw = .225, hg = .265, bw = .185, by0 = -.030, by1 = .098;
+  const vec2 nr = vec2(.76237, -.64730), nl = vec2(-.76237, -.64730);   // the two slopes
+  vec2 t = p - vec2(0., by0);                              // eaves at t.y = 0, ridge above
+  float roof = max(t.y, max(dot(t - vec2(hw, 0.), nr), dot(t - vec2(0., -hg), nl)));
+  float body = box(p - vec2(0., (by0 + by1) * .5), vec2(bw, (by1 - by0) * .5));
+  float flue = box(p - vec2(-.104, -.172), vec2(.0215, .058));
+  return min(roof, min(body, flue));
+}
+// two lit panes under the eaves, and the only thing on a hut that is actually a light
+float winsOf(vec2 p){
+  return min(box(p - vec2(-.082, .036), vec2(.030, .026)),
+             box(p - vec2(.082, .036), vec2(.030, .026)));
+}
 vec3 warmth(vec3 c){ return mix(c, vec3(dot(c, vec3(.34))) * vec3(1.3, 1., .74), uDawn * .9); }
 void main(){
   vec2 q = gl_PointCoord - .5;                      // -.5 .. .5, y downwards
   float r = length(q);
   int k = int(vK + .5);
+  // A point sprite is a square and every halo in here is round. The window that keeps the
+  // light inside the sprite has to be round too: a Chebyshev window - max(|x|,|y|) - has a
+  // square for its iso-contour, so cutting a round glow with it draws a box in light
+  // instead of removing one. That is what Śnieżka wore in the hero.
+  float edge = 1. - smoothstep(.38, .50, r);
+  if (k == 10) {
+    // Chimney smoke. One soft puff, raked cool by the moon on the side the moon is on and
+    // warm underneath from the window it has just left: the only thing in this picture lit
+    // by both lights at once, which is the whole reason to draw it.
+    float s = 1. - smoothstep(0., .5, r); s *= s * s;
+    float side = .34 + .66 * clamp(.5 + .5 * dot(q / max(r, 1e-4), uMoonS), 0., 1.);
+    float under = smoothstep(-.06, .44, q.y) * (1. - vQ) * (1. - vQ);
+    vec3 c = warmth(vec3(.58, .63, .72) * side * s + vec3(1., .52, .22) * under * s * .90) * vNear * edge;
+    o = vec4(c * vA, max(c.r, max(c.g, c.b)) * vA); return;
+  }
   if (k < 6) {
     float a = smoothstep(.5, 0., r); a *= k == 5 ? a * a * 1.6 : a;
     vec3 c = a * (k == 5 ? vec3(1., .72, .45) : k == 4 ? vec3(1., .78, .5) : k == 3 ? vec3(1., .3, .16)
       : k == 2 ? vec3(.79, .89, 1.) : k == 1 ? vec3(1., .69, .35) : vec3(.86, .95, 1.));
-    if (k == 3) c += vec3(1., .3, .14) * smoothstep(.17, 0., r);     // the beacon keeps a hot core
-    c = warmth(c);                 // at first light nothing stays cool, not even a headlamp
+    // the beacon: a hot core and the red bloom the air puts round it, so one slow light
+    // sits above the crest and is read as a light and not as a dot
+    if (k == 3) c += vec3(1., .27, .12) * smoothstep(.21, 0., r) * 1.35 + vec3(.95, .17, .07) * exp(-r * r * 8.) * .55;
+    c = warmth(c) * edge;          // at first light nothing stays cool, not even a headlamp
     o = vec4(c * vA, max(c.r, max(c.g, c.b)) * vA); return;
   }
-  // a drawn mark: the glyph a walking map would print, lit from inside. Its stroke keeps a
-  // constant width in pixels, so it is a symbol and never a smear.
-  float lw = .8 / max(vPx, 8.), aa = 1.3 / max(vPx, 8.);
-  float d = 9., win = 0., bloom = exp(-r * r * 13.);
-  vec3 ink = vec3(1., .9, .76), lit = vec3(1., .72, .38), glow = vec3(1., .46, .16);
-  if (k == 6 || k == 7) {                            // a shelter: a gable, with a lit window
-    vec2 a0 = vec2(-.23, .23), a1 = vec2(-.23, .01), a2 = vec2(0., -.22), a3 = vec2(.23, .01), a4 = vec2(.23, .23);
-    d = min(min(seg(q, a0, a1), seg(q, a1, a2)), min(min(seg(q, a2, a3), seg(q, a3, a4)), seg(q, a4, a0)));
-    win = 1. - smoothstep(.055, .105, length((q - vec2(0., .11)) * vec2(1., 1.25)));
-  } else if (k == 8) {                               // the observatory: discs on the summit
-    ink = vec3(.84, .93, 1.); lit = vec3(.9, .96, 1.); glow = vec3(.42, .62, .9);
-    d = min(min(seg(q, vec2(-.25, .2), vec2(.25, .2)), seg(q, vec2(-.19, .03), vec2(.19, .03))),
-            min(seg(q, vec2(-.12, -.12), vec2(.12, -.12)), seg(q, vec2(0., -.12), vec2(0., -.3))));
-    win = 1. - smoothstep(.03, .07, length(q - vec2(0., -.32)));
-  } else {                                           // the relay: a guyed mast, hut beside it
-    ink = vec3(.84, .93, 1.); lit = vec3(.86, .94, 1.); glow = vec3(.42, .62, .9); bloom *= .6;
-    d = min(min(seg(q, vec2(-.08, .3), vec2(0., -.45)), seg(q, vec2(.08, .3), vec2(0., -.45))),
-            min(min(seg(q, vec2(-.055, .06), vec2(.055, .06)), seg(q, vec2(-.03, -.18), vec2(.03, -.18))),
-                min(seg(q, vec2(.15, .3), vec2(.15, .15)), min(seg(q, vec2(.15, .15), vec2(.37, .15)), seg(q, vec2(.37, .15), vec2(.37, .3))))));
-    win = 1. - smoothstep(.035, .07, length(q - vec2(.26, .23)));
+  if (k == 6 || k == 7) {
+    // A shelter, in five parts and no model: the lit panes, the hot air just inside the
+    // glass, the pool they lay on the stones outside, the glow the night air takes on for
+    // a few hundred metres round all of it, and the building standing up out of the middle
+    // of that - dark, because from outside at night a wall is only the shape of the light
+    // it is keeping in. vQ is the hearth's own breath: it moves the panes and the pool and
+    // leaves the air alone, so twenty huts never shimmer as a group.
+    float s = .49 / vHut;                               // sprite units -> the hut's own units
+    vec2 p = q * s;
+    float big = 1. - vNear, tight = mix(.42, 1., vNear);
+    // the glass: a point far off, a band of lit window as the camera comes in
+    vec2 wq = vec2(p.x / (.150 * tight), (p.y - .040) / (.058 * tight));
+    float win = exp(-dot(wq, wq));
+    // what it throws on the stones in front of the door
+    vec2 pq = vec2(p.x / .30, (p.y - .175) / .130);
+    float pool = exp(-dot(pq, pq)) * smoothstep(.02, .14, p.y) * vNear;
+    // and the air, in the sprite's own span, so it always dies out cleanly at the edge
+    vec2 e = q - vec2(0., .112 * vHut);
+    e.y *= e.y > 0. ? .84 : 1.16;
+    float fall = 1. - smoothstep(0., .50, length(e)), f2 = fall * fall, pane = 0.;
+    vec3 c = vec3(1., .82, .55) * win * (.60 + .55 * big)
+      + vec3(1., .50, .19) * pool * .44
+      + vec3(1., .72, .36) * f2 * fall * (.34 + .34 * big)
+      + vec3(1., .54, .22) * f2 * (.165 + .020 * big);
+    // the building, and only when there is one to see: at hero distance every shelter on
+    // this map is a light and the whole of this costs nothing
+    if (vNear > .004) {
+      float ha = 1.5 / max(vPx, 10.) * s;                  // one pixel, in hut units
+      float wd = winsOf(p), sd = max(hutOf(p), -wd);        // the walls, with the panes cut out
+      float in0 = 1. - smoothstep(-ha, ha, sd);
+      c *= 1. - in0 * vNear * .94;                          // a silhouette, not a hole
+      // But a roof is not black. A low moon lays a sheen along whichever slope faces it and
+      // leaves the other one, and the ridge between the two is the whole difference between
+      // a building and a triangle. uMoonS says where the moon is on screen, so the lit slope
+      // is the slope that would actually be lit. The walls face the viewer and get almost
+      // nothing - which is what sets them apart from the roof above them.
+      float kr = max(dot(vec2(.76237, -.64730), uMoonS), 0.);
+      float kl = max(dot(vec2(-.76237, -.64730), uMoonS), 0.);
+      float isRoof = smoothstep(ha, -ha, p.y + .030);
+      float sheen = mix(.085, max(p.x > 0. ? kr : kl, .46), isRoof);
+      c += vec3(.60, .71, .88) * in0 * vNear * sheen * .215;
+      // the panes themselves, straight through the wall. This is the whole trick: once the
+      // building is dark, two small hot rectangles do more than any amount of glow.
+      pane = (1. - smoothstep(-ha, ha * 1.6, wd)) * vNear;
+      c += vec3(1., .80, .50) * pane * 1.18;
+      // and the line of light that gets past the edge of the roof
+      float g = max(sd, 0.) / (.010 + ha * .8);
+      c += vec3(1., .58, .24) * exp(-g * g) * vNear * smoothstep(-.11, .03, p.y) * .30;
+    }
+    // A shoulder on it. Without this the centre runs red and green both into the ceiling at
+    // once and the window turns a pale yellow-green - a light that has blown out, not a
+    // light that is bright. With it, the hottest part goes white the way a window does.
+    c /= 1. + c * .62;
+    // The hearth's own rise and fall, put on after the shoulder and only where the light is
+    // actually coming out of the building. Before the shoulder the knee flattens the swing
+    // hardest at the core, which is the one place it would be seen; and the wide halo is
+    // left out of it, or twenty huts breathe together and the range shimmers as a group.
+    c *= 1. + (vQ - 1.) * clamp(win + pool * 1.5 + pane * 2., 0., 1.) * vNear;
+    c *= edge;
+    o = vec4(warmth(c) * vA, max(c.r, max(c.g, c.b)) * vA); return;
   }
-  float line = 1. - smoothstep(lw, lw + aa, d);
-  // the sprite is a light, never a shadow: its own alpha follows its brightest channel, so
-  // a glow that falls on the sky adds to it instead of punching a dark square in it
-  vec3 c = warmth(ink * line * .85 + lit * win * 1.25 + glow * bloom * .34);
+  // The two instruments on the crest. The same language as the huts, not line art: a cool
+  // glow in the air and the thing itself standing dark inside it, with the one edge the
+  // moon finds on steel. The strokes are held at a width in CSS pixels rather than device
+  // pixels, so a sharp screen gets a finer line and not a crisper drawing.
+  float px = uDpr / max(vPx, 8.);
+  float d, win;
+  vec3 ink = vec3(.84, .93, 1.), lit = vec3(.9, .96, 1.), glow = vec3(.42, .62, .9);
+  if (k == 8) {              // Śnieżka: three saucers, each one smaller than the one under it
+    d = min(min(disc(q, vec2(0., .175), vec2(.255, .080)), disc(q, vec2(0., .025), vec2(.195, .070))),
+            min(disc(q, vec2(0., -.105), vec2(.130, .058)), box(q - vec2(0., -.255), vec2(.011, .085))));
+    win = 1. - smoothstep(.016, .040, box(q - vec2(.150, .175), vec2(.030, .016)));
+  } else {                                      // the relay: a tapering mast, the hut beside it
+    lit = vec3(.86, .94, 1.);
+    float t = clamp((.30 - q.y) / .76, 0., 1.);
+    d = min(seg(q, vec2(0., .30), vec2(0., -.46)) - mix(.046, .006, t * t),
+            box(q - vec2(.235, .225), vec2(.135, .072)));
+    win = 1. - smoothstep(.014, .036, box(q - vec2(.262, .212), vec2(.034, .016)));
+  }
+  float far = 1. - vNear;
+  // every glow here is round and every one of them reaches zero at the sprite's edge of its
+  // own accord, so nothing has to be cut off at a boundary and nothing wears a box
+  float fall = 1. - smoothstep(0., .50, r), f2 = fall * fall;
+  float core = smoothstep(.20, 0., r), air = f2 * fall, haze = f2;
+  vec3 c = vec3(.80, .89, 1.) * (core * (.34 + .80 * far) + air * (.80 + .40 * far))
+    + glow * haze * (.18 + .30 * vNear);
+  float sil = (1. - smoothstep(-px * .6, px * .9, d)) * vNear;
+  c *= 1. - sil * .74;                            // it stands in its own light, not on it
+  c += ink * sil * .24 + lit * win * .95 * vNear;
+  c /= 1. + c * .62;
+  c = warmth(c) * edge;
   o = vec4(c * vA, max(c.r, max(c.g, c.b)) * vA); }`;
 
 function start(bake, gl) {
@@ -357,11 +668,13 @@ function start(bake, gl) {
 
   const compile = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
   const program = (vs, fs) => { const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); return p; };
-  const land = program(VS, FS), dots = program(PVS, PFS), ribs = program(RVS, RFS);
+  const land = program(VS, FS), dots = program(PVS, PFS), ribs = program(RVS, RFS), sky = program(SVS, SFS);
   const uni = (p, names) => Object.fromEntries(names.map(n => [n, gl.getUniformLocation(p, n)]));
-  const UL = uni(land, ['uMap', 'uAux', 'uVP', 'uRect', 'uTexel', 'uCam', 'uLamp', 'uLampOn', 'uDawn', 'uReveal', 'uBeat', 'uGain', 'uLit', 'uFine', 'uPanel', 'uPanelK']);
-  const UP = uni(dots, ['uVP', 'uScale', 'uDawn']);
-  const UR = uni(ribs, ['uVP', 'uPix', 'uWid', 'uCol', 'uDawn', 'uReveal', 'uCam', 'uWarm', 'uPanel', 'uPanelK']);
+  const UL = uni(land, ['uMap', 'uAux', 'uVP', 'uRect', 'uTexel', 'uCam', 'uMoon', 'uLamp', 'uLampOn', 'uDawn', 'uReveal', 'uBeat', 'uGain', 'uLit', 'uFine', 'uPanel', 'uPanelK', 'uPre']);
+  const UP = uni(dots, ['uVP', 'uScale', 'uDawn', 'uMoonS', 'uDpr']);
+  const UR = uni(ribs, ['uVP', 'uPix', 'uWid', 'uCol', 'uDawn', 'uReveal', 'uCam', 'uWarm', 'uPanel', 'uPanelK', 'uShore', 'uShoreD', 'uT']);
+  const US = uni(sky, ['uRx', 'uRy', 'uFw', 'uMoon', 'uDawn', 'uPre']);
+  const skyVao = gl.createVertexArray();      // three vertices made out of gl_VertexID alone
 
   // the sheet: a grid of (u, v) points, displaced in the vertex shader
   const S = SMALL ? 224 : 320;
@@ -458,69 +771,129 @@ function start(bake, gl) {
     .forEach(([nm, sz, off]) => { const l = gl.getAttribLocation(ribs, nm); if (l >= 0) { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, sz, gl.FLOAT, false, 36, off); } });
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(RI), gl.STATIC_DRAW);
   gl.bindVertexArray(null);
-  const RWID = [.6, .85, 1.2, 1.3, .9, .9, 1.5, 0], RW = new Float32Array(8);
+  // Drawn finer and cooler than a daylight sheet would print them: under a moon a salmon
+  // waymark across a silver range reads as a scratch on the picture, so the routes keep
+  // their weight and give up most of their colour. Dawn takes them to luminance anyway.
+  // A shoreline is drawn as the edge of a thing that is there, not as an outline round a
+  // shape: an hour before dawn a reservoir is a near-black mirror, and a bright pale rim
+  // laid round it is the one object on a moonlit relief that reads as pasted vector.
+  const RWID = [.55, .78, 1.1, .70, .78, .8, 1.15, 0], RW = new Float32Array(8);
   const RCOL = new Float32Array([
-    .28, .56, .70, .50,   .28, .58, .72, .60,   .34, .62, .76, .72,   // the streams
-    .60, .86, .96, .95,                                               // a shoreline
-    .95, .90, .80, .60,   .62, .82, .98, .56,   1., .78, .66, .90,    // the paths
-    .042, .082, .112, .95,                                            // a lake
+    .26, .52, .70, .44,   .27, .55, .74, .52,   .32, .60, .78, .64,   // the streams
+    .48, .68, .82, .30,                                               // a shoreline
+    .80, .86, .92, .40,   .60, .78, .98, .44,   .94, .82, .74, .58,   // the paths
+    .022, .044, .072, .95,                                            // a lake
   ]);
 
   // ---------------- the lights ----------------
-  // No buildings: a shelter is two or three warm windows and the pool they throw on the
-  // ground. PTS: [x, y, z, brightness, kind, dim group]
-  const PTS = [], LAMPS = [];
-  const put = (x, z, lift, a, k, grp) => { PTS.push([x, heightAt(x, z) + lift, z, a, k, grp === undefined ? -1 : grp]); };
-  for (const s of F.shelters) {
+  // A shelter is a warm core, the glow the night air puts round it, the pool it throws on
+  // the ground, a gable standing dark in front of all three, and a thread of smoke. None of
+  // that is a building: it is what a building does to the dark around it.
+  // PTS: [x, y, z, brightness, kind, group, lights at, goes out at, how low it goes]
+  const PTS = [], LAMPS = [], GRP = [];
+  const SH = F.shelters;
+  let xlo = 1e9, xhi = -1e9;
+  for (const s of SH) { xlo = Math.min(xlo, s.x); xhi = Math.max(xhi, s.x); }
+  // the order the huts light up in, as the land comes up under them: lowest first
+  const byH = SH.map((s, i) => i).sort((a, b) => heightAt(SH[a].x, SH[a].z) - heightAt(SH[b].x, SH[b].z));
+  const rank = new Array(SH.length); byH.forEach((i, r) => rank[i] = r / Math.max(1, SH.length - 1));
+  const put = (x, z, lift, a, k, grp, on, out, floor) =>
+    PTS.push([x, heightAt(x, z) + lift, z, a, k, grp === undefined ? -1 : grp, on || 0, out === undefined ? .3 : out, floor === undefined ? .16 : floor]);
+  SH.forEach((s, i) => {
     const g = LAMPS.length; LAMPS.push([s.x, s.z]);
-    put(s.x, s.z, s.p ? .42 : .33, s.p ? 1 : .6, s.p ? 6 : 7, g);     // the hut itself
-    const n = s.p ? 2 : 1, sp = s.p ? .17 : .13, br = s.p ? .85 : .5;
+    // Each hearth keeps its own time: a phase for the breathing, a moment at which it is
+    // lit, and the moment the day reaches it. East is -x, so the east end goes out first.
+    GRP.push({ home: 1, ph: (i * 2.39996) % 6.2832 });
+    const on = .22 + 1.80 * (rank[i] * .80 + ((i * 7919) % 101) / 101 * .20);
+    const out = .20 + .62 * (s.x - xlo) / (xhi - xlo) + .11 * rank[i];
+    put(s.x, s.z, s.p ? .42 : .33, s.p ? 1 : .6, s.p ? 6 : 7, g, on, out, .17);   // the hut
+    const n = s.p ? 2 : 1, sp = s.p ? .30 : .20, br = s.p ? .24 : .15;
     for (let k = 0; k < n; k++) {
       const a = (k / n) * 6.2832 + s.x;
-      put(s.x + Math.cos(a) * sp, s.z + Math.sin(a) * sp * .7, .18 + (k % 2) * .09, br * (.78 + .22 * ((k * 7) % 3) / 2), 1, g);
+      put(s.x + Math.cos(a) * sp, s.z + Math.sin(a) * sp * .7, .18 + (k % 2) * .09,
+        br * (.78 + .22 * ((k * 7) % 3) / 2), 1, g, on + .10 + .22 * k, out + .04 * k, .17);
     }
-  }
-  // the relay above the Śnieżne Kotły: a mast on an empty rim, cool windows, and one slow
-  // red light high enough to sit against the sky rather than against the rock
-  const RT = F.landmarks.rton, grt = LAMPS.length; LAMPS.push([RT.x, RT.z]);
-  put(RT.x, RT.z, .5, 1, 9, grt);
-  put(RT.x + .22, RT.z + .1, .22, .45, 2, grt);
+  });
+  // The relay above the Śnieżne Kotły and the observatory on Śnieżka are instruments, not
+  // homes. They do not breathe, they do not smoke, and they do not go out when the day
+  // comes: they come on together, early, and they stay.
+  const RT = F.landmarks.rton, grt = LAMPS.length; LAMPS.push([RT.x, RT.z]); GRP.push({ home: 0, ph: 0 });
+  put(RT.x, RT.z, .5, 1, 9, grt, .10, .42, .44);
+  put(RT.x + .22, RT.z + .1, .22, .45, 2, grt, .14, .42, .44);
   const beaconAt0 = PTS.length;
-  put(RT.x, RT.z, .95, 1, 3, grt);
-  // the observatory on Śnieżka: the discs every local looks for, drawn small and cool
-  const OB = F.landmarks.obs, gob = LAMPS.length; LAMPS.push([OB.x, OB.z]);
-  put(OB.x, OB.z, .44, 1, 8, gob);
-  for (let k = 0; k < 2; k++) put(OB.x + Math.cos(k * 2.4) * .16, OB.z + Math.sin(k * 2.4) * .16, .22 + k * .08, .8, 2, gob);
+  put(RT.x, RT.z, .95, 1, 3, grt, .06, 1.2, 1);
+  const OB = F.landmarks.obs, gob = LAMPS.length; LAMPS.push([OB.x, OB.z]); GRP.push({ home: 0, ph: 0 });
+  put(OB.x, OB.z, .44, 1, 8, gob, .10, .42, .44);
+  for (let k = 0; k < 2; k++) put(OB.x + Math.cos(k * 2.4) * .16, OB.z + Math.sin(k * 2.4) * .16, .22 + k * .08, .8, 2, gob, .14 + k * .08, .42, .44);
   const MARKN = LAMPS.length;
-  // the valley towns: lights scattered on the real settlements, thickest where the people are
+  // the valley towns: lights scattered on the real settlements, thickest where the people
+  // are, and switched off the same way round as the huts - the east end of the basin first
   let seed = 7;
   const rnd = () => { seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
   for (const t of F.towns) {
     const s = Math.sqrt(t.p), n = Math.min(16, Math.max(2, Math.round(s / 3.4))), r = .5 + s * .052;
+    const out = .17 + .56 * Math.max(0, Math.min(1, (t.x + 60) / 120));
     for (let k = 0; k < n; k++) {
       const a = rnd() * 6.2832, d = Math.sqrt(rnd()) * r;
-      put(t.x + Math.cos(a) * d, t.z + Math.sin(a) * d * .8, .12, .3 + rnd() * .4 + t.k * .1, 4);
+      put(t.x + Math.cos(a) * d, t.z + Math.sin(a) * d * .8, .12, .3 + rnd() * .4 + t.k * .1, 4,
+        -1, .05 + rnd() * .9, out + rnd() * .12, .10);
     }
   }
   // Jelenia Góra is 300 m past the north edge: an arc of glow, not a cluster
-  for (let k = 0; k < 5; k++) PTS.push([F.offscreen.x + (k - 2) * 6.5, 1.4, 42.5 - Math.abs(k - 2) * .7, .1 + (2 - Math.abs(k - 2)) * .035, 5, -1]);
+  for (let k = 0; k < 5; k++) PTS.push([F.offscreen.x + (k - 2) * 6.5, 1.4, 42.5 - Math.abs(k - 2) * .7,
+    .1 + (2 - Math.abs(k - 2)) * .035, 5, -1, .1 + k * .08, .30, .10]);
+
+  // ---------------- the smoke ----------------
+  // A few soft puffs leaving each chimney, drifting with a light air off the Czech side and
+  // thinning as they climb. They are faded out beyond about six kilometres: at hero distance
+  // a thread of woodsmoke is not a thing you can see, and pretending otherwise is kitsch.
+  // Enough of them, close enough together, that they join into a thread. Four puffs spread
+  // over a whole climb is a string of beads, which is what it looked like; eight small ones
+  // overlapping is smoke. They are drawn smaller to pay for the extra count, and each one
+  // thins as it rises instead of swelling and fading like a ring of breath.
+  const SMOKE = [];
+  SH.forEach((s, i) => {
+    const n = s.p ? 8 : 3;
+    const y0 = heightAt(s.x, s.z) + (s.p ? .46 : .38);
+    for (let k = 0; k < n; k++) SMOKE.push({
+      g: i, x: s.x - .10, y: y0, z: s.z + .04,
+      ph: k / n + ((i * 37 + k * 11) % 23) / 460,
+      rate: (s.p ? .135 : .115) * (.88 + ((i * 13 + k * 5) % 7) / 26),
+      rise: s.p ? 1.30 : .92,
+      dx: -.95 + (((i * 5 + k * 3) % 9) - 4) * .09,
+      dz: .62 + (((i * 11 + k * 7) % 9) - 4) * .075,
+      a: s.p ? .54 : .34,
+    });
+  });
+  // Samotnia is the one hut on this map that stands on a shore. Mały Staw is forty metres
+  // below its windows and dead still on a cold night, so the light goes out across it.
+  const samI = SH.findIndex(s => s.n === 'Samotnia');
+  const mStaw = F.lakes.find(l => l.n === 'Maly Staw');
+  const SHORE = samI >= 0 && mStaw
+    ? { x: SH[samI].x, z: SH[samI].z, cx: mStaw.x, cz: mStaw.z, g: samI } : null;
 
   // ---------------- walkers on the real paths ----------------
   const pathOf = pts => { const acc = [0]; for (let i = 1; i < pts.length; i++) acc.push(acc[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])); return { P: pts, acc, L: acc[acc.length - 1] }; };
   const TP = {}; for (const t of F.trails) TP[t.k] = pathOf(t.p);
-  const AG = [['karpacz', 0, 1.3], ['karpacz', 15, 1.05], ['karpacz', 30, 1.45], ['ascent', 1, 1.15],
-    ['ascent', 12, .95], ['ridge', 3, 1.6], ['ridge', 31, 1.3], ['ridge', 60, 1.5]]
-    .map(([k, off, sp]) => ({ path: TP[k], off, sp }));
+  // Walking up, every one of them: the two valley paths run from the town to the hut and
+  // the crest route runs west to east, and the arc length only ever increases. Two more on
+  // the climb out of Szklarska Poręba, because that climb is what the third stop is about.
+  const AG = [['karpacz', 0, 1.10], ['karpacz', 15, .90], ['karpacz', 30, 1.22], ['ascent', 1, .98],
+    ['ascent', 12, .82], ['ascent', 25, 1.08], ['ascent', 38, .88], ['ridge', 3, 1.35],
+    ['ridge', 31, 1.10], ['ridge', 60, 1.28]]
+    .map(([k, off, sp], i) => ({ path: TP[k], off, sp, ph: i * 1.7 }));
   const TAIL = 5, AN = AG.length * TAIL;
+  const SN0 = AN + PTS.length;                    // where the smoke starts in the buffer
 
-  const ap = new Float32Array((AN + PTS.length) * 5);
-  PTS.forEach((p, i) => { const o = (AN + i) * 5; ap[o] = p[0]; ap[o + 1] = p[1]; ap[o + 2] = p[2]; ap[o + 4] = p[4]; });
+  const ap = new Float32Array((SN0 + SMOKE.length) * 6);
+  PTS.forEach((p, i) => { const o = (AN + i) * 6; ap[o] = p[0]; ap[o + 1] = p[1]; ap[o + 2] = p[2]; ap[o + 4] = p[4]; });
+  for (let i = 0; i < SMOKE.length; i++) ap[(SN0 + i) * 6 + 4] = 10;
   const avao = gl.createVertexArray(); gl.bindVertexArray(avao);
   const abuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, abuf); gl.bufferData(gl.ARRAY_BUFFER, ap.byteLength, gl.DYNAMIC_DRAW);
-  const aPos = gl.getAttribLocation(dots, 'aPos'), aA = gl.getAttribLocation(dots, 'aA'), aK = gl.getAttribLocation(dots, 'aK');
-  gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 20, 0);
-  gl.enableVertexAttribArray(aA); gl.vertexAttribPointer(aA, 1, gl.FLOAT, false, 20, 12);
-  gl.enableVertexAttribArray(aK); gl.vertexAttribPointer(aK, 1, gl.FLOAT, false, 20, 16);
+  [['aPos', 3, 0], ['aA', 1, 12], ['aK', 1, 16], ['aQ', 1, 20]].forEach(([nm, sz, off]) => {
+    const l = gl.getAttribLocation(dots, nm);
+    if (l >= 0) { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, sz, gl.FLOAT, false, 24, off); }
+  });
   gl.bindVertexArray(null);
   const along = (path, s) => {
     const { P, acc, L } = path;
@@ -533,40 +906,50 @@ function start(bake, gl) {
   const placeAgents = (time, gain) => {
     AG.forEach((g, i) => {
       const L = g.path.L, s0 = (time * g.sp + g.off) % (L + 6);
+      // a headlamp rides on somebody's forehead, so it rises and falls with the stride
+      const bob = reduce ? 0 : Math.sin(time * 4.3 + g.ph) * .035;
       for (let k = 0; k < TAIL; k++) {
-        const s = s0 - k * .4, p = along(g.path, s), o = (i * TAIL + k) * 5;
+        const s = s0 - k * .4, p = along(g.path, s), o = (i * TAIL + k) * 6;
         const ends = Math.max(0, Math.min(1, s / 2, (L - s) / 2));
         let near = 1;   // a walker gives way near a shelter, so its own windows read first
         for (let q = 0; q < MARKN; q++) { const d = Math.hypot(p[0] - LAMPS[q][0], p[2] - LAMPS[q][1]); if (d < 2.2) near = Math.min(near, .25 + .75 * d / 2.2); }
-        ap[o] = p[0]; ap[o + 1] = p[1]; ap[o + 2] = p[2]; ap[o + 3] = (k === 0 ? 1 : .5 * (1 - k / TAIL)) * ends * near * gain;
+        ap[o] = p[0]; ap[o + 1] = p[1] + bob * (1 - k / TAIL); ap[o + 2] = p[2];
+        ap[o + 3] = (k === 0 ? 1 : .5 * (1 - k / TAIL)) * ends * near * gain;
       }
     });
+  };
+  // the smoke, placed the same way: an age that cycles, a climb that slows, a drift that does
+  // not. Under reduced motion the clock stands still and each puff keeps the age it has.
+  const placeSmoke = (time, lit) => {
+    for (let i = 0; i < SMOKE.length; i++) {
+      const s = SMOKE[i], age = (time * s.rate + s.ph) % 1, o = (SN0 + i) * 6;
+      const w = Math.sin(age * 4.1 + s.ph * 6.2832) * .06 * age;
+      ap[o] = s.x + s.dx * age * age + w;
+      ap[o + 1] = s.y + s.rise * age * (1.35 - .35 * age);
+      ap[o + 2] = s.z + s.dz * age * age + w * .6;
+      // up out of the flue at full strength and thinning the whole way, which is what a
+      // chimney does; a puff that fades in from nothing starts in mid-air
+      const up = 1 - age;
+      ap[o + 3] = s.a * up * up * Math.sqrt(up) * Math.min(1, age * 11) * lit[s.g];
+      ap[o + 5] = age;
+    }
   };
 
   // ---------------- labels pinned to the land ----------------
   const top = (x, z) => { let b = [x, -1e9, z]; for (let dx = -1.2; dx <= 1.2; dx += .3) for (let dz = -1.2; dz <= 1.2; dz += .3) { const h = heightAt(x + dx, z + dz); if (h > b[1]) b = [x + dx, h, z + dz]; } return b; };
-  const MARK = {
-    peak: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.6 10.6 9.6H1.4z" fill="none" stroke="#ece7da" stroke-width="1.2"/></svg>',
-    // a filled square for a town, two for a city: a ring with a dot in it reads as ©
-    town: '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="3.2" y="3.2" width="5.6" height="5.6" fill="#ece7da"/></svg>',
-    city: '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="4.6" width="4.6" height="4.6" fill="#ffb27a"/><rect x="6.8" y="2.1" width="4.2" height="4.2" fill="#ffb27a" opacity=".7"/></svg>',
-  };
   const pins = [];
   const addPin = (el, p, stop, mode) => { labelsEl.appendChild(el); pins.push({ el, p, stop, mode, o: -1 }); };
   for (const l of LABELS) {
     const el = document.createElement('div');
-    if (l.kind === 'place') {
-      el.className = 'lbl place' + (l.mark === 'peak' ? ' pk' : '');
-      el.innerHTML = `${MARK[l.mark]}<span><b>${l.b}</b>${l.s ? `<small>${l.s}</small>` : ''}</span>`;
-      const p = l.mark === 'peak' ? top(l.at[0], l.at[1]) : [l.at[0], heightAt(l.at[0], l.at[1]), l.at[1]];
-      addPin(el, p, l.stop, 'place');
-    } else {
-      el.className = 'lbl' + (l.b ? ' stem' : ' quiet');
-      el.innerHTML = (l.b ? `<b>${l.b}</b>` : '') + (l.i ? `<i>${l.i}</i>` : '');
-      const p = l.peak ? top(l.peak[0], l.peak[1]) : [l.at[0], heightAt(l.at[0], l.at[1]) + (l.dy || 0), l.at[1]];
-      if (l.peak) p[1] += .7;
-      addPin(el, p, l.stop, 'pin');
-    }
+    el.className = 'lbl' + (l.b ? ' stem' : ' quiet');
+    el.innerHTML = (l.b ? `<b>${l.b}</b>` : '') + (l.i ? `<i>${l.i}</i>` : '');
+    // The one label on the page that has to read sits over a lit shelter, so it is given a
+    // stem long enough to stand off the halo instead of a shadow to fight it with: cream
+    // type on a cream-white light is unreadable whichever way the shadow is pushed.
+    if (l.stem) el.style.setProperty('--stem', l.stem + 'px');
+    const p = l.peak ? top(l.peak[0], l.peak[1]) : [l.at[0], heightAt(l.at[0], l.at[1]) + (l.dy || 0), l.at[1]];
+    if (l.peak) p[1] += .7;
+    addPin(el, p, l.stop, 'pin');
   }
   for (const g of GRAT) {
     const el = document.createElement('div'); el.className = 'lbl grat' + (g.side === 'w' ? ' w' : ''); el.textContent = g.txt;
@@ -574,8 +957,8 @@ function start(bake, gl) {
   }
   // placed in this order, so that what the stop is about takes the space it needs first
   const order = pins.slice().sort((a, b) =>
-    (a.mode === 'grat' ? 3 : a.mode === 'place' ? 2 : a.el.querySelector('b') ? 0 : 1) -
-    (b.mode === 'grat' ? 3 : b.mode === 'place' ? 2 : b.el.querySelector('b') ? 0 : 1));
+    (a.mode === 'grat' ? 2 : a.el.querySelector('b') ? 0 : 1) -
+    (b.mode === 'grat' ? 2 : b.el.querySelector('b') ? 0 : 1));
 
   // ---------------- camera ----------------
   const n = WAY.length;
@@ -642,9 +1025,14 @@ function start(bake, gl) {
   let cur = STILL !== null ? STILL : 0, last = performance.now(), t0 = last, visible = true, rafId = 0, revealStart = 0, dirty = true;
   const P2 = [0, 0, 0];
   const mdim = new Float32Array(LAMPS.length).fill(1);
+  const live = new Float32Array(LAMPS.length).fill(1);   // breathing × giving way to a label
+  const breath = new Float32Array(LAMPS.length).fill(1); // the hearth's own rise and fall
+  const shLit = new Float32Array(SH.length).fill(1);     // how brightly each hut is burning
   const c01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
-  // the aviation light: a slow blink, steady when motion is reduced
-  const blink = t => { const u = (t / 3.4) % 1; return c01(u / .07) * c01((.24 - u) / .07); };
+  const sst = (a, b, x) => { const t = c01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+  // the aviation light on the mast: slow, and with the soft tail a real one has - a flash,
+  // then a few seconds of nearly nothing. Steady when motion is reduced.
+  const blink = t => { const u = (t / 4.6) % 1; return c01(u / .045) * c01((.14 - u) / .075) + .30 * Math.exp(-Math.max(0, u - .13) * 6.5); };
   const loop = now => {
     rafId = 0;
     const wasDirty = dirty; dirty = false;
@@ -663,7 +1051,15 @@ function start(bake, gl) {
     const up = [right[1] * fwd[2] - right[2] * fwd[1], right[2] * fwd[0] - right[0] * fwd[2], right[0] * fwd[1] - right[1] * fwd[0]];
     basis = { r: right, u: up, f: fwd, th: Math.tan(fov / 2), a: aspect };
 
-    const dawn = Math.max(0, Math.min(1, (cur - (n - 1.85)) / .85));
+    // Spread across the whole of the last flight and starting the moment the camera begins
+    // to pull back, so the colour arrives while the camera is still moving and the huts have
+    // the room to go out in order. Packed into the last tenth it arrived as a cut, and took
+    // the one sequence on the page - the lights going out from the east - down with it.
+    const dawn = c01(cur - (n - 2));
+    // The hour before. The sky in the east comes up a stop at a time, so the sun at the last
+    // stop finishes something that started on the first screen instead of arriving from
+    // nowhere. It is full by the fourth stop, where the dawn itself takes the picture over.
+    const pre = .20 + .80 * c01(cur / (n - 2));
     root.style.setProperty('--dawn', dawn.toFixed(3));
     lampOn += (lampTarget - lampOn) * Math.min(1, dt * 5);
     const reveal = reduce ? 999 : (revealStart ? -4 + (now - revealStart) / 1000 * 20 : -4);
@@ -687,33 +1083,78 @@ function start(bake, gl) {
       panelK = 1;
     }
 
-    const k0 = revealed ? 1 : 0;
-    const warmK = (1 - dawn * .84) * k0, coolK = (1 - dawn * .72) * k0, townK = (1 - dawn * .88) * k0;
-    const hikeK = (1 - dawn * .6) * k0, markK = (1 - dawn * .5) * k0, markC = (1 - dawn * .55) * k0;
+    // The lights come on one at a time as the land rises under them - low huts first, with
+    // enough wander in the order that it reads as twenty separate decisions and not as a
+    // sweep - and they go out the same way at dawn, from the east end of the range, where
+    // the light actually arrives first. None of them goes out completely: there is still
+    // somebody in a shelter at first light, and the frame the film ends on needs them.
+    const lu = reduce ? 99 : (revealStart ? (now - revealStart) / 1000 : 0);
+    const hikeK = (1 - dawn * .6) * (reduce ? 1 : sst(.45, 1.5, lu));
     for (let i = 0; i < LAMPS.length; i++) {
       project([LAMPS[i][0], heightAt(LAMPS[i][0], LAMPS[i][1]), LAMPS[i][1]], P2);
       const k = P2[2] <= 0 ? 0 : (onWords(P2[0], P2[1]) ? .28 : 1);
       mdim[i] += (k - mdim[i]) * (reduce ? 1 : Math.min(1, dt * 4));   // no fades when motion is reduced
+      // A stove is not a lamp: a slow swell with something irregular riding on it, and
+      // never a tidy sine. Every hearth on its own phase, or twenty huts pulse together and
+      // the range looks electrified. This goes to the panes and the pool a hut throws, not
+      // to the air round it - the glow stays still, which is what keeps the range calm.
+      const G = GRP[i];
+      breath[i] = (reduce || !G.home) ? 1
+        : 1 + .128 * Math.sin(time * .38 + G.ph) + .073 * Math.sin(time * .97 + G.ph * 2.7)
+        + .039 * Math.sin(time * 2.31 + G.ph * 1.3) + .034 * Math.sin(time * .17 + G.ph * 4.1);
+      live[i] = mdim[i] * breath[i];
     }
-    const beacon = (reduce ? .8 : .42 + .58 * blink(time)) * (1 - dawn * .5) * k0;
-    const KBY = [hikeK, warmK, coolK, k0, townK, townK, markK, markK, markC, markC];
+    const beacon = (reduce ? .8 : .20 + .80 * blink(time)) * (1 - dawn * .40) * (reduce ? 1 : sst(.06, .5, lu));
+    let warmS = 0, coolS = 0, townS = 0, townN = 0;
     for (let i = 0; i < PTS.length; i++) {
-      const q = PTS[i];
-      ap[(AN + i) * 5 + 3] = (i === beaconAt0 ? beacon : q[3] * KBY[q[4]]) * (q[5] < 0 ? 1 : mdim[q[5]]);
+      const q = PTS[i], k = q[4];
+      let a = q[3];
+      if (i === beaconAt0) a = beacon;
+      else {
+        // it waits its turn, and it waits for the ground under it: nothing lights in mid-air
+        const on = reduce ? 1 : sst(q[6], q[6] + .55, lu) * sst(q[1] - .7, q[1] + .3, reveal);
+        const burn = on * (1 - (1 - q[8]) * sst(q[7], q[7] + .26, dawn));
+        a *= burn;
+        if (k === 6 || k === 7) { warmS += burn; shLit[q[5]] = burn; }
+        else if (k === 8 || k === 9) coolS += burn;
+        else if (k === 4) { townS += burn; townN++; }
+      }
+      // a hut carries its breath in aQ instead, so only its panes and its pool move
+      const home = k === 6 || k === 7;
+      if (q[5] >= 0) a *= home ? mdim[q[5]] : live[q[5]];
+      const ao = (AN + i) * 6;
+      ap[ao + 3] = a;
+      if (home) ap[ao + 5] = breath[q[5]];
     }
+    // what the ground under them is given: the average of what is actually burning
+    const warmK = warmS / SH.length, coolK = coolS * .5, townK = townN ? townS / townN : 0;
 
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.enable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+    // the sky first, across the whole frame and writing no depth, so the crest has something
+    // to stand against. It empties out as the dawn comes up behind the canvas.
+    gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
+    gl.useProgram(sky);
+    gl.uniform3f(US.uFw, fwd[0], fwd[1], fwd[2]);
+    gl.uniform3f(US.uRx, right[0] * basis.th * aspect, right[1] * basis.th * aspect, right[2] * basis.th * aspect);
+    gl.uniform3f(US.uRy, up[0] * basis.th, up[1] * basis.th, up[2] * basis.th);
+    gl.uniform3f(US.uMoon, MOON[0], MOON[1], MOON[2]);
+    gl.uniform1f(US.uDawn, dawn); gl.uniform1f(US.uPre, pre);
+    gl.bindVertexArray(skyVao); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
+    gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
+
     gl.useProgram(land);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(UL.uMap, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, aux); gl.uniform1i(UL.uAux, 1);
     gl.uniformMatrix4fv(UL.uVP, false, VP);
     gl.uniform4f(UL.uRect, CX, CZ, W, D); gl.uniform2f(UL.uTexel, 1 / N, 1 / N);
     gl.uniform3f(UL.uCam, eye[0], eye[1], eye[2]); gl.uniform3f(UL.uLamp, lamp[0], lamp[1], lamp[2]);
+    gl.uniform3f(UL.uMoon, MOON[0], MOON[1], MOON[2]);
     gl.uniform1f(UL.uLampOn, lampOn); gl.uniform1f(UL.uDawn, dawn); gl.uniform1f(UL.uReveal, reveal);
     MW.beatSmooth = (MW.beatSmooth || 0) + ((MW.beat || 0) - (MW.beatSmooth || 0)) * Math.min(1, dt * 8);
     gl.uniform1f(UL.uBeat, MW.beatSmooth); gl.uniform1f(UL.uGain, OG ? 1.22 : 1);
-    gl.uniform3f(UL.uLit, warmK, coolK, townK);
+    gl.uniform3f(UL.uLit, warmK, coolK, townK); gl.uniform1f(UL.uPre, pre);
     // the 25 m lines come up as the camera closes in
     gl.uniform1f(UL.uFine, Math.max(0, Math.min(1, (74 - dist) / 26)));
     gl.uniform1f(UL.uPanelK, panelK);
@@ -728,6 +1169,20 @@ function start(bake, gl) {
     gl.uniform1f(UR.uDawn, dawn); gl.uniform1f(UR.uReveal, reveal); gl.uniform1f(UR.uWarm, warmK);
     gl.uniform1f(UR.uPanelK, panelK);
     gl.uniform3f(UR.uCam, eye[0], eye[1], eye[2]);
+    gl.uniform1f(UR.uT, reduce ? 0 : time);
+    if (SHORE) {
+      // Which way Samotnia's windows lie out over Mały Staw. On a flat mirror the answer is
+      // straight at the viewer, but the tarn is two hundred metres across and every stop on
+      // this flight stands a kilometre north of it and half a kilometre above, so that
+      // answer is a glint on the shore and nothing else. So it is bent onto the water: the
+      // column anyone has ever seen from a lakeside window, pointing the way it is seen.
+      let ax = eye[0] - SHORE.x, az = eye[2] - SHORE.z; const al = Math.hypot(ax, az) || 1;
+      let bx = SHORE.cx - SHORE.x, bz = SHORE.cz - SHORE.z; const bl = Math.hypot(bx, bz) || 1;
+      let dx = ax / al + bx / bl * 1.45, dz = az / al + bz / bl * 1.45;
+      const dl = Math.hypot(dx, dz) || 1;
+      gl.uniform4f(UR.uShore, SHORE.x, SHORE.z, shLit[SHORE.g], 0);
+      gl.uniform4f(UR.uShoreD, dx / dl, dz / dl, 0, 0);
+    } else { gl.uniform4f(UR.uShore, 1e5, 1e5, 0, 0); gl.uniform4f(UR.uShoreD, 1, 0, 0, 0); }
     // the line work keeps its own ground but wins the depth test, so a path on a steep
     // slope is never half-swallowed by the quad it lies on
     gl.depthMask(false); gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1, -220);
@@ -735,17 +1190,28 @@ function start(bake, gl) {
     gl.disable(gl.POLYGON_OFFSET_FILL); gl.depthMask(true);
 
     placeAgents(reduce ? 7 : time, hikeK);
+    placeSmoke(reduce ? 11 : time, shLit);
     gl.bindBuffer(gl.ARRAY_BUFFER, abuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, ap);
     gl.useProgram(dots); gl.uniformMatrix4fv(UP.uVP, false, VP); gl.uniform1f(UP.uDawn, dawn);
-    gl.uniform2f(UP.uScale, canvas.height * .9, canvas.height / ch);
+    gl.uniform3f(UP.uScale, canvas.height * .9, canvas.height / ch, SMALL ? .72 : 1);
+    gl.uniform1f(UP.uDpr, canvas.height / ch);
+    // which way the moon lies, in the sprite's own pixels, so a puff of smoke is lit on the
+    // side the moon is actually on however the camera is turned
+    const msx = MOON[0] * right[0] + MOON[1] * right[1] + MOON[2] * right[2];
+    const msy = -(MOON[0] * up[0] + MOON[1] * up[1] + MOON[2] * up[2]);
+    const msl = Math.hypot(msx, msy) || 1;
+    gl.uniform2f(UP.uMoonS, msx / msl, msy / msl);
     gl.depthMask(false); gl.blendFunc(gl.ONE, gl.ONE);
-    gl.bindVertexArray(avao); gl.drawArrays(gl.POINTS, 0, AN + PTS.length);
+    gl.bindVertexArray(avao); gl.drawArrays(gl.POINTS, 0, SN0 + SMOKE.length);
     gl.depthMask(true); gl.bindVertexArray(null);
 
     // labels: never on top of the words, never off the edge, never on each other. The ones
     // that carry the story are placed first and the rest give way to them.
     const railR = cw > 860 ? 58 : 10; // keep clear of the route dots on the right
     const taken = [];
+    // where a label is allowed to step to when its own place is taken: sideways first,
+    // because a word beside a path still points at the path
+    const CAND = [[0, 0], [17, 0], [-17, 0], [0, -26], [0, 26], [34, 0], [-34, 0], [0, -52], [0, 52]];
     for (const pin of order) {
       project(pin.p, P2);
       const near = Math.min(...pin.stop.map(s => Math.abs(cur - s)));
@@ -753,18 +1219,16 @@ function start(bake, gl) {
       if (!revealed) o = 0;
       if (pin.w === undefined || pin.w === 0) { pin.w = pin.el.offsetWidth; pin.h = pin.el.offsetHeight; }
       if (pin.mode === 'grat') { const safe = cw >= 760 && !portrait() && P2[0] > cw * .46 && P2[0] < cw - railR - 20 && P2[1] > 80 && P2[1] < ch - 30 && !onText(P2[0], P2[1], 90, 16); o *= safe ? .85 : 0; }
-      if (pin.mode === 'pin' || pin.mode === 'place') {
-        const half = pin.mode === 'pin' ? pin.w / 2 : 0;
-        const lo = 12 + half, hi = cw - railR - (pin.mode === 'pin' ? half : pin.w);
+      if (pin.mode === 'pin') {
+        const half = pin.w / 2;
+        const lo = 12 + half, hi = cw - railR - half;
         if (hi > lo) P2[0] = Math.min(hi, Math.max(lo, P2[0]));
         // the bar at the top is 64 px of sticky header and the route dots sit at the foot of
         // a phone: a label is held clear of both rather than dropped, and only let go when
         // the thing it names has genuinely left the frame
-        const tg = pin.mode === 'place' ? 74 + pin.h / 2 : 86;
-        const bg = ch - (portrait() ? 54 : 14) - (pin.mode === 'place' ? pin.h / 2 : 0);
+        const tg = 86, bg = ch - (portrait() ? 54 : 14);
         if (P2[1] < tg) { if (P2[1] < tg - 170) o = 0; else P2[1] = tg; }
         if (P2[1] > bg) { if (P2[1] > bg + 130) o = 0; else P2[1] = bg; }
-        if (onText(P2[0] + (pin.mode === 'place' ? pin.w / 2 : 0), P2[1], pin.w, pin.h)) o = 0;
       }
       let tf = `translate(${P2[0].toFixed(1)}px,${P2[1].toFixed(1)}px)`;
       let below = false;
@@ -773,14 +1237,29 @@ function start(bake, gl) {
         if (below !== pin.below) { pin.el.classList.toggle('below', below); pin.below = below; }
         tf += below ? ' translate(-50%,10px)' : ' translate(-50%,-100%)';
       }
-      if (o > .02 && pin.mode !== 'grat') {        // one label to a patch of sky
-        const bx = pin.mode === 'place' ? P2[0] - 6 : P2[0] - pin.w / 2;
-        const by = pin.mode === 'place' ? P2[1] - pin.h / 2 : (below ? P2[1] + 10 : P2[1] - pin.h);
-        if (taken.some(r => bx < r.x + r.w + 10 && bx + pin.w > r.x - 10 && by < r.y + r.h + 6 && by + pin.h > r.y - 6)) o = 0;
-        else taken.push({ x: bx, y: by, w: pin.w, h: pin.h });
+      // One label to a patch of sky, with a real gap between them: two that merely miss each
+      // other stack into the four-line caption block this page was asked to be rid of. But a
+      // label that clashes - with another label or with the words on the panel - is pushed
+      // clear before it is dropped. On a phone the whole of stop 3 is four words walking up
+      // a trail, and dropping three of them loses the stop rather than tidying it.
+      let nx = 0, ny = 0;
+      if (o > .02 && pin.mode !== 'grat') {
+        const gap = 15, by0 = below ? P2[1] + 10 : P2[1] - pin.h;
+        const free = (dx, dy) => {
+          const bx = P2[0] + dx - pin.w / 2, by = by0 + dy;
+          if (by < 72 || by + pin.h > ch - (portrait() ? 46 : 8)) return false;
+          if (bx < 8 || bx + pin.w > cw - railR) return false;
+          if (onText(P2[0] + dx, P2[1] + dy, pin.w, pin.h)) return false;
+          return !taken.some(r => bx < r.x + r.w + 10 && bx + pin.w > r.x - 10
+            && by < r.y + r.h + gap && by + pin.h > r.y - gap);
+        };
+        let ok = false;
+        for (const [dx, dy] of CAND) if (free(dx, dy)) { nx = dx; ny = dy; ok = true; break; }
+        if (ok) taken.push({ x: P2[0] + nx - pin.w / 2, y: by0 + ny, w: pin.w, h: pin.h });
+        else o = 0;
       }
+      if (nx || ny) tf += ` translate(${nx}px,${ny}px)`;
       if (pin.mode === 'grat') tf += ' translate(-50%,-100%)';
-      if (pin.mode === 'place') tf += ' translate(-6px,-50%)';
       pin.el.style.transform = tf;
       if (Math.abs(o - pin.o) > .01) { pin.el.style.opacity = o.toFixed(3); pin.o = o; }
     }
@@ -834,13 +1313,18 @@ function flat2D(bake, cv = canvas) {
       const hd = heights[Math.max(0, j - 1) * N + i], hu = heights[Math.min(N - 1, j + 1) * N + i];
       let nx = -(hr - hl) / (2 * sx), nz = (hu - hd) / (2 * sz), ny = 1;
       const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
-      const lum = Math.max(0, nx * .36 + ny * .53 + nz * .77);
+      // the same moon as the relief, so the printed sheet is the same night
+      const key = Math.pow(Math.max(0, nx * MOON[0] + ny * MOON[1] + nz * MOON[2]), 1.6);
+      const amb = .46 + (ny * .5 + .5) * 1.3;
       const t = Math.max(0, Math.min(1, (heights[k] - .6) / 21));
-      const sh = .3 + lum * 1.5;
       const o = ((N - 1 - j) * N + i) * 4;
-      img.data[o] = Math.min(255, (4 + 15 * t) * sh * 1.15);
-      img.data[o + 1] = Math.min(255, (11 + 33 * t) * sh * 1.15);
-      img.data[o + 2] = Math.min(255, (13 + 34 * t) * sh * 1.15);
+      const lv = (lo, hi, sl, sh) => {
+        const v = (lo + (hi - lo) * t) * amb + (sl + (sh - sl) * t) * key;
+        return Math.min(255, v / (1 + v / 255 * .72));
+      };
+      img.data[o] = lv(3, 8, 86, 198);
+      img.data[o + 1] = lv(6, 15, 114, 224);
+      img.data[o + 2] = lv(11, 22, 148, 260);
       img.data[o + 3] = 255;
     }
   }
@@ -855,7 +1339,7 @@ function flat2D(bake, cv = canvas) {
     const s = Math.max(w / 92, h / 62) * (small ? 1.35 : 1.02);
     const ox = w * (small ? .52 : .63), oy = h * (small ? .36 : .52), wx0 = 2, wz0 = -8;
     const X = x => ox + (x - wx0) * s, Y = z => oy + (z - wz0) * s;
-    ctx.fillStyle = '#081416'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#070d18'; ctx.fillRect(0, 0, w, h);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(shadeCanvas, X(CX - W / 2), Y(CZ - D / 2), W * s, D * s);
     // contour lines (marching squares on every second sample)
@@ -880,7 +1364,7 @@ function flat2D(bake, cv = canvas) {
           }
         }
       }
-      ctx.strokeStyle = k % 5 === 0 ? 'rgba(150,205,192,.52)' : 'rgba(110,160,152,.2)';
+      ctx.strokeStyle = k % 5 === 0 ? 'rgba(168,196,232,.5)' : 'rgba(128,156,198,.19)';
       ctx.lineWidth = k % 5 === 0 ? 1.1 : .7;
       ctx.stroke();
     }
@@ -888,18 +1372,18 @@ function flat2D(bake, cv = canvas) {
     ctx.lineJoin = ctx.lineCap = 'round';
     for (const st of F.streams) {
       ctx.beginPath(); st.p.forEach(([x, z], q) => q ? ctx.lineTo(X(x), Y(z)) : ctx.moveTo(X(x), Y(z)));
-      ctx.strokeStyle = 'rgba(88,166,201,.6)'; ctx.lineWidth = .5 + st.w * .4; ctx.stroke();
+      ctx.strokeStyle = 'rgba(84,150,200,.6)'; ctx.lineWidth = .5 + st.w * .4; ctx.stroke();
     }
     // the lakes, laid over the contours the way a printed map masks them
     for (const lk of F.lakes) {
       ctx.beginPath(); lk.o.forEach(([x, z], q) => q ? ctx.lineTo(X(x), Y(z)) : ctx.moveTo(X(x), Y(z))); ctx.closePath();
-      ctx.fillStyle = '#0b2330'; ctx.fill();
-      ctx.strokeStyle = 'rgba(140,198,220,.8)'; ctx.lineWidth = .9; ctx.stroke();
+      ctx.fillStyle = '#081827'; ctx.fill();
+      ctx.strokeStyle = 'rgba(150,190,228,.8)'; ctx.lineWidth = .9; ctx.stroke();
     }
     // the paths, dashed, with the crest route drawn heavier
     ctx.setLineDash([5, 4]);
     for (const t of F.trails) {
-      ctx.strokeStyle = t.w ? 'rgba(140,186,232,.6)' : 'rgba(236,231,218,.5)';
+      ctx.strokeStyle = t.w ? 'rgba(140,180,228,.55)' : 'rgba(214,224,240,.42)';
       ctx.lineWidth = t.k === 'ridge' ? 1.9 : 1.2;
       ctx.beginPath(); t.p.forEach(([x, z], k) => k ? ctx.lineTo(X(x), Y(z)) : ctx.moveTo(X(x), Y(z))); ctx.stroke();
     }
@@ -935,7 +1419,7 @@ function flat2D(bake, cv = canvas) {
     ctx.moveTo(ox2, oy2 - 4.4); ctx.lineTo(ox2, oy2 - 8.6); ctx.stroke();
     // edge vignette so the sheet sits in the night
     const g = ctx.createRadialGradient(w * .6, h * .5, Math.min(w, h) * .3, w * .6, h * .5, Math.max(w, h) * .8);
-    g.addColorStop(0, 'rgba(8,20,22,0)'); g.addColorStop(1, 'rgba(8,20,22,.85)');
+    g.addColorStop(0, 'rgba(7,13,24,0)'); g.addColorStop(1, 'rgba(7,13,24,.85)');
     ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
   };
   draw();
