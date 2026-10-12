@@ -91,6 +91,30 @@ function bake({ N, W, D, cx, cz, F }, px, pw, ph) {
     el[k] += ((a + 2 * tmp[k] + b) * .25 - el[k]) * kw[k];
   }
 
+  // ---- a level terrace under each shelter ----
+  // A mountain hut stands on ground somebody levelled for it. This map is drawn about four
+  // times as steep as the land, so without a terrace a building on a slope stood on a stone
+  // tower taller than itself. Each wing gets the mean of the ground it covers, eased out over
+  // a few hundred metres - which on a contour sheet is exactly what a terrace looks like.
+  for (const p of F.pads || []) {
+    const R = .45, ext = Math.max(p.hu, p.hv) + R;
+    const i0 = Math.max(0, Math.floor(CI(p.x - ext))), i1 = Math.min(N - 1, Math.ceil(CI(p.x + ext)));
+    const j0 = Math.max(0, Math.floor(CJ(p.z + ext))), j1 = Math.min(N - 1, Math.ceil(CJ(p.z - ext)));
+    const dOf = (i, j) => {
+      const dx = X(i) - p.x, dz = Z(j) - p.z;
+      const u = Math.abs(dx * p.A[0] + dz * p.A[1]) - p.hu, v = Math.abs(dx * p.B[0] + dz * p.B[1]) - p.hv;
+      return Math.hypot(Math.max(u, 0), Math.max(v, 0));
+    };
+    let sum = 0, cnt = 0;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (dOf(i, j) < .14) { sum += el[j * N + i]; cnt++; }
+    if (!cnt) continue;
+    const lev = sum / cnt;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const w = 1 - sm(clamp01((dOf(i, j) - .05) / R));
+      el[j * N + i] += (lev - el[j * N + i]) * w * .92;
+    }
+  }
+
   // ---- the water: real outlines, filled and levelled ----
   const wat = new Float32Array(n2);           // coverage, 0..1
   const levels = [];                          // each lake's surface, in world units

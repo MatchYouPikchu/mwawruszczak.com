@@ -536,55 +536,25 @@ void main(){ vK = aK; vA = aA; vQ = aQ;
   // A shelter's halo opens out as the camera closes in - far more than perspective alone
   // would give it. That is honest: the glow in the air round a hut is hundreds of metres
   // wide and only resolves into air when you are near enough for it to have any size.
-  float sz = SZ[k] * (k == 6 || k == 7 ? 1. + 1.50 * vNear : k == 10 ? .50 + 1.25 * aQ : 1.);
+  float sz = SZ[k] * (k == 6 || k == 7 ? 1. + .80 * vNear : k == 10 ? .50 + 1.25 * aQ : 1.);
   float px = clamp(sz * uScale.x / max(c.w, .1), MN[k] * uScale.y, MX[k] * uScale.y * uScale.z);
-  // The building keeps a size in the world, so a near hut is bigger than a far one and the
-  // row of them recedes into the range in perspective - which is most of what makes a thing
-  // look like it stands in a landscape rather than on a picture of one. The limits keep a far
-  // hut legible and a near one from turning into a model.
+  // The relay keeps a size in the world, with its foot on the rim, so it stands on the land
+  // and not over it. The limits keep it legible far off and from turning into a model close in.
   float hutPx = 0.;
-  if (k == 6 || k == 7) {
-    hutPx = clamp((k == 6 ? 2.3 : 1.75) * uScale.x / max(c.w, .1), (k == 6 ? 13. : 10.) * uScale.y, (k == 6 ? 46. : 34.) * uScale.y * uScale.z);
-    px = max(px, hutPx / .58);
-  }
-  // the observatory and the relay the same way: their foot on the summit and the rim, and a
-  // size in the world, so the one the finale lands beside is a building and not a badge
-  if (k == 8 || k == 9) {
-    hutPx = clamp((k == 8 ? 2.2 : 2.4) * uScale.x / max(c.w, .1), 12. * uScale.y, (k == 8 ? 64. : 58.) * uScale.y * uScale.z);
-    px = max(px, hutPx * (k == 8 ? 1.30 : 1.62));   // the mast is tall: it needs the room
+  if (k == 9) {
+    hutPx = clamp(2.4 * uScale.x / max(c.w, .1), 12. * uScale.y, 58. * uScale.y * uScale.z);
+    px = max(px, hutPx * 1.62);                        // the mast is tall: it needs the room
   }
   gl_PointSize = vPx = px;
-  vHut = (k >= 6 && k <= 9) ? clamp(hutPx / max(vPx, 1.), .10, k == 8 ? .77 : k == 9 ? .617 : .58) : .3; }`;
+  vHut = k == 9 ? clamp(hutPx / max(vPx, 1.), .10, .617) : .3; }`;
 const PFS = `#version 300 es
 precision mediump float;
 in float vA; in float vK; in float vPx; in float vNear; in float vQ; in float vHut;
 uniform float uDawn; uniform float uDpr; uniform vec2 uMoonS;   // the moon, in screen pixels
-uniform int uPass;   // 0: the buildings, solid, over the land; 1: every light, added
+uniform int uPass;   // 0: the relay, solid, over the land; 1: every light, added
 out vec4 o;
 float seg(vec2 p, vec2 a, vec2 b){ vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0., 1.)); }
 float box(vec2 p, vec2 b){ vec2 d = abs(p) - b; return min(max(d.x, d.y), 0.) + length(max(d, 0.)); }
-float disc(vec2 p, vec2 c, vec2 r){ vec2 e = (p - c) / r; return (length(e) - 1.) * min(r.x, r.y); }
-// The building: a steep gable over a short body, with a flue just off the ridge. Not a
-// model and not a map symbol. Every schronisko up here is mostly roof, pitched to shed
-// four metres of snow - a shallow triangle hanging over a glow is a road sign, and a
-// triangle with nothing under it is a pictogram. So: a roof at 50 degrees, walls that
-// reach down into the pool of light the windows throw, and the panes cut out of the wall
-// (winsOf, subtracted) so that the light in this picture is coming from somewhere.
-// Signed, so the edge can be softened and a warm line hung under the eaves.
-float hutOf(vec2 p){
-  const float hw = .225, hg = .265, bw = .185, by0 = -.030, by1 = .098;
-  const vec2 nr = vec2(.76237, -.64730), nl = vec2(-.76237, -.64730);   // the two slopes
-  vec2 t = p - vec2(0., by0);                              // eaves at t.y = 0, ridge above
-  float roof = max(t.y, max(dot(t - vec2(hw, 0.), nr), dot(t - vec2(0., -hg), nl)));
-  float body = box(p - vec2(0., (by0 + by1) * .5), vec2(bw, (by1 - by0) * .5));
-  float flue = box(p - vec2(-.104, -.172), vec2(.0215, .058));
-  return min(roof, min(body, flue));
-}
-// two lit panes under the eaves, and the only thing on a hut that is actually a light
-float winsOf(vec2 p){
-  return min(box(p - vec2(-.080, .040), vec2(.023, .020)),
-             box(p - vec2(.080, .040), vec2(.023, .020)));
-}
 vec3 warmth(vec3 c){ return mix(c, vec3(dot(c, vec3(.34))) * vec3(1.3, 1., .74), uDawn * .9); }
 void main(){
   vec2 q = gl_PointCoord - .5;                      // -.5 .. .5, y downwards
@@ -596,7 +566,7 @@ void main(){
   // instead of removing one. That is what Śnieżka wore in the hero.
   float edge = 1. - smoothstep(.38, .50, r);
   // the solid pass draws only the huts themselves; everything else is light
-  if (uPass == 0 && (k < 6 || k > 9)) discard;
+  if (uPass == 0 && k != 9) discard;
   if (k == 10) {
     // Chimney smoke. One soft puff, raked cool by the moon on the side the moon is on and
     // warm underneath from the window it has just left: the only thing in this picture lit
@@ -617,66 +587,19 @@ void main(){
     c = warmth(c) * edge;          // at first light nothing stays cool, not even a headlamp
     o = vec4(c * vA, max(c.r, max(c.g, c.b)) * vA); return;
   }
-  if (k == 6 || k == 7) {
-    // A shelter. Drawn twice: once solid, as a building standing on its ground - dark timber,
-    // a moonlit slope of roof, two lit panes and the shadow where it meets the hillside - and
-    // once as light: the glow of the panes, the pool on the stones, the air lit round it. Only
-    // the light pass is added; the building is laid over the land, so the slope never shows
-    // through its walls, which is what made the first huts look as if they hovered.
-    float s = .49 / vHut;                               // sprite units -> the hut's own units
-    vec2 p = q * s;                                     // the foot of the walls is at p.y = 0
-    vec2 ph = p + vec2(0., .098);                       // the building's own frame
-    float big = 1. - vNear, tight = mix(.42, 1., vNear);
-    float ha = 1.5 / max(vPx, 10.) * s;                 // one pixel, in hut units
-    float wd = winsOf(ph), sd = max(hutOf(ph), -wd);    // the walls, with the panes cut out
-    float shape = step(.004, vNear);
-    float in0 = (1. - smoothstep(-ha, ha, sd)) * shape;
-    float pane = (1. - smoothstep(-ha, ha * 1.6, wd)) * shape;
-    if (uPass == 0) {
-      // where the walls meet the hillside: a soft dark band, wider than the building, so it
-      // sits in the ground instead of resting on top of it
-      vec2 cq = vec2(p.x / .36, (p.y - .008) / .046);
-      float contact = exp(-dot(cq, cq)) * vNear;
-      float kr = max(dot(vec2(.76237, -.64730), uMoonS), 0.), kl = max(dot(vec2(-.76237, -.64730), uMoonS), 0.);
-      float isRoof = smoothstep(ha, -ha, ph.y + .030);
-      float sheen = mix(.05, max(ph.x > 0. ? kr : kl, .30), isRoof);
-      vec3 body = vec3(.022, .025, .031) + vec3(.55, .66, .84) * sheen * .30;
-      // the moon catches the edge of the roof all the way round - eaves, both verges and the
-      // ridge - so the building keeps its whole shape even where a slope is in shadow
-      float rim = in0 * (1. - smoothstep(ha * .8, ha * 2.6, -sd)) * isRoof;
-      body += mix(vec3(.62, .72, .88), vec3(1., .72, .48), uDawn) * rim * (.20 + .30 * max(kr, kl) + .25 * uDawn);
-      vec3 glass = vec3(1., .78, .46) * (.35 + .85 * vA) * vQ;
-      float a = clamp(in0 + pane, 0., 1.) * vNear * clamp(.45 + vA + uDawn, 0., 1.);
-      vec3 cb = mix(body, glass, clamp(pane / max(in0 + pane, 1e-3), 0., 1.));
-      float shade = contact * .58 * (1. - a);
-      o = vec4(warmth(cb) * a, a + shade);               // premultiplied: the shadow is black
-      return;
-    }
-    // the glass: a point far off, a band of lit window as the camera comes in
-    vec2 wq = vec2(ph.x / (.150 * tight), (ph.y - .040) / (.058 * tight));
-    float win = exp(-dot(wq, wq));
-    // what the windows throw on the stones in front of the walls, on the ground
-    vec2 pq = vec2(p.x / .32, (p.y - .050) / .095);
-    float pool = exp(-dot(pq, pq)) * smoothstep(-.02, .05, p.y) * vNear;
-    // and the air, centred on the windows and held in above the ground, so the glow lies
-    // round the building and does not hang under it like a ball
-    vec2 e = q - vec2(0., -.062 / s);
-    e.y *= e.y > 0. ? 1.30 : 1.05;
-    float fall = 1. - smoothstep(0., .50, length(e)), f2 = fall * fall;
-    vec3 c = vec3(1., .82, .55) * win * (.60 + .55 * big)
-      + vec3(1., .50, .19) * pool * .40
-      + vec3(1., .72, .36) * f2 * fall * (.34 + .34 * big)
-      + vec3(1., .54, .22) * f2 * (.165 + .020 * big);
-    if (vNear > .004) {
-      c *= 1. - in0 * vNear * .97;                      // no light on the walls themselves
-      float g = max(sd, 0.) / (.008 + ha * .7);         // the line that gets past the eaves
-      float band = smoothstep(-.050, -.030, ph.y) * (1. - smoothstep(-.012, .004, ph.y));
-      c += vec3(1., .58, .24) * exp(-g * g) * vNear * band * .22;
-    }
+  if (k == 6 || k == 7 || k == 8) {
+    // The light a building puts in the air round it. The building itself is drawn as a
+    // building; from the basin this glow is all of a hut there is, close in it is a warmth
+    // lying round the walls - the stencil keeps it off them. The observatory's is cool.
+    if (uPass == 0) discard;
+    float big = 1. - vNear;
+    float fall = 1. - smoothstep(0., .50, r), f2 = fall * fall, core = smoothstep(.16, 0., r);
+    vec3 c = k == 8 ? vec3(.80, .89, 1.) * (core * .55 * big + f2 * fall * (.30 + .40 * big)) + vec3(.42, .62, .9) * f2 * .16
+      : vec3(1., .80, .52) * core * 1.15 * big + vec3(1., .72, .36) * f2 * fall * (.26 + .40 * big) + vec3(1., .54, .22) * f2 * (.14 + .04 * big);
     c /= 1. + c * .62;
-    c *= 1. + (vQ - 1.) * clamp(win + pool * 1.5 + pane * 2., 0., 1.) * vNear;
-    c *= edge;
-    o = vec4(warmth(c) * vA, max(c.r, max(c.g, c.b)) * vA); return;
+    if (k != 8) c *= 1. + (vQ - 1.) * .7;               // the stove's breath reaches the air too
+    c = warmth(c) * edge;
+    o = vec4(c * vA, max(c.r, max(c.g, c.b)) * vA); return;
   }
   // The two instruments on the crest. The same language as the huts, not line art: a cool
   // glow in the air and the thing itself standing dark inside it, with the one edge the
@@ -685,15 +608,11 @@ void main(){
   // The drawing stands on the sprite's centre, which is the ground: its own units are the
   // sprite's divided by the share of it the building takes, with the foot at the middle.
   float hv = vHut;
-  vec2 qd = q / hv + vec2(0., k == 8 ? .255 : .30);
+  vec2 qd = q / hv + vec2(0., .30);
   float px = uDpr / max(vPx * hv, 8.);
   float d, win;
   vec3 ink = vec3(.84, .93, 1.), lit = vec3(.9, .96, 1.), glow = vec3(.42, .62, .9);
-  if (k == 8) {              // Śnieżka: three saucers, each one smaller than the one under it
-    d = min(min(disc(qd, vec2(0., .175), vec2(.255, .080)), disc(qd, vec2(0., .025), vec2(.195, .070))),
-            min(disc(qd, vec2(0., -.105), vec2(.130, .058)), box(qd - vec2(0., -.255), vec2(.011, .085))));
-    win = 1. - smoothstep(.016, .040, box(qd - vec2(.150, .175), vec2(.030, .016)));
-  } else {                                      // the relay: a tapering mast, the hut beside it
+  {                                             // the relay: a tapering mast, the hut beside it
     lit = vec3(.86, .94, 1.);
     float t = clamp((.30 - qd.y) / .76, 0., 1.);
     d = min(seg(qd, vec2(0., .30), vec2(0., -.46)) - mix(.046, .006, t * t),
@@ -706,14 +625,14 @@ void main(){
     // it at night and the sun at dawn, and a little shadow where it meets the rock
     float rim = 1. - smoothstep(px * .5, px * 3.2, -d);
     vec3 body = vec3(.024, .028, .036) + mix(vec3(.50, .60, .78) * .30, vec3(1., .70, .46) * .55, uDawn) * rim;
-    vec2 cq = vec2(qd.x / .34, (qd.y - (k == 8 ? .255 : .30)) / .045);
+    vec2 cq = vec2(qd.x / .34, (qd.y - .30) / .045);
     float contact = exp(-dot(cq, cq)) * vNear * .5;
     float a = sil * clamp(.55 + vA + uDawn, 0., 1.);
     o = vec4(warmth(body) * a, a + contact * (1. - a));
     return;
   }
   // the air round it is centred on the building, not on its foot
-  float lift = (k == 8 ? .30 : .38) * hv;
+  float lift = .38 * hv;
   r = length(q + vec2(0., lift)) * .5 / (.5 - lift);
   float far = 1. - vNear;
   // every glow here is round and every one of them reaches zero at the sprite's edge of its
@@ -727,6 +646,256 @@ void main(){
   c /= 1. + c * .62;
   c = warmth(c) * edge;
   o = vec4(c * vA, max(c.r, max(c.g, c.b)) * vA); }`;
+
+// The shelters' buildings, wing by wing, in the land's own units: each wing's centre, the
+// way its ridge runs and the way across it, its half-length and half-width in metres, its
+// storeys, and its scale. The bake levels a terrace under each wing; the mesh stands on it.
+// About seven times life size, so a hut reads as a building from a kilometre off and the
+// big ones stay bigger than the small.
+const BK = .027;                                     // world units to a metre of building
+function wingsOf(s) {
+  const b = s.b;
+  if (!b) return [];
+  const ca = Math.cos(b.a), sa = Math.sin(b.a);
+  // a small hut is held to a size that still reads as a building
+  const m = BK * Math.max(1, 22 / Math.max(...b.w.map(w => 2 * Math.max(w[2], w[3]))));
+  const Uw = [-ca, sa], Vw = [sa, ca];               // its own axes on the land: east is -x, north is +z
+  return b.w.map(([cu, cv, hu, hv, lv]) => {
+    const alongU = hu >= hv;
+    return { x: b.x - (cu * ca - cv * sa) * m, z: b.z + (cu * sa + cv * ca) * m, A: alongU ? Uw : Vw, B: alongU ? Vw : [-Uw[0], -Uw[1]],
+      ha: alongU ? hu : hv, hb: alongU ? hv : hu, lv, m };
+  });
+}
+
+// ---------------- the buildings ----------------
+// Every shelter is drawn as its own building: the real footprint from the survey, cut into
+// wings, each with its storeys and its roof. What the walls and the light they throw on the
+// ground have to agree on is which windows are burning, so that is written once, here.
+const WIN = `
+float hh(vec4 p){ p = fract(p * vec4(.1031, .1030, .0973, .1099)); p += dot(p, p.wzxy + 33.33); return fract((p.x + p.y) * p.z + p.w); }
+// how a wall of this finish is windowed: the spacing, and half a pane's width
+vec2 winSpec(float tone){ return tone > 1.5 ? vec2(3.1, .85) : tone > .5 ? vec2(2.3, .55) : vec2(2.7, .60); }
+// which column of windows a point along a wall falls in, and how far it is from that
+// column's centre; -1 past the last one. The row is centred, a metre clear of each corner.
+vec2 winCol(float u, float hl, float P){
+  float n = max(1., floor((2. * hl - 2.2) / P));
+  float c = floor((u + n * P * .5) / P);
+  return vec2(c >= 0. && c < n ? c : -1., u + n * P * .5 - (c + .5) * P);
+}
+// Whether one window is burning. Some rooms are empty. Each lit one comes on at its own
+// moment as the hut wakes and goes out at its own moment as the day reaches it, and a few
+// hold on through the dawn; now and then one goes dark for a while and comes back.
+float winLit(float hut, float face, float s, float c, vec4 H, float lv, float t){
+  float h1 = hh(vec4(hut, face, s, c)), h2 = hh(vec4(c + 3.1, hut + 7., face, s)), h3 = hh(vec4(s, c, hut + 3., face + 5.));
+  float p = s < .5 ? .86 : s > lv - .5 ? .46 : .64;
+  float lit = step(h1, p) * step(h2 * .92, H.x);
+  lit *= 1. - step(h3 * 1.15, H.y) * step(h3, .82);
+  lit *= step(.035, fract(h2 * 7.31 + h3 + t / 67.));
+  return lit;
+}
+// a room's own light: most of them lamp-warm, a few behind a red curtain
+vec3 winTint(float hut, float face, float s, float c){
+  float h = hh(vec4(face + 2., s + 9., c, hut));
+  return h < .16 ? vec3(1., .46, .20) * .62 : mix(vec3(1., .62, .31), vec3(1., .80, .54), h);
+}
+// the fog and the dawn of the land, so a building sits in the same air as its hillside
+vec3 airOf(float d, float dawn){ return mix(vec3(.040, .064, .102), vec3(.188, .153, .136), dawn); }
+float fogOf(float d, float dawn){ return smoothstep(mix(46., 75., dawn), mix(236., 255., dawn), d) * (.74 - dawn * .36); }
+float quietOf(vec4 P, float K){
+  return K <= 0. ? 0. : K * (1. - smoothstep(0., 110., max(0., max(max(P.x - gl_FragCoord.x, gl_FragCoord.x - P.z), max(P.y - gl_FragCoord.y, gl_FragCoord.y - P.w)))));
+}`;
+const BVS = `#version 300 es
+precision highp float;
+in vec3 aPos; in vec3 aNrm; in vec2 aUv; in vec4 aInf; in vec3 aFt;
+uniform mat4 uVP;
+out vec3 vP; out vec3 vN; out vec2 vUv; flat out vec4 vInf; flat out vec3 vFt;
+void main(){ vP = aPos; vN = aNrm; vUv = aUv; vInf = aInf; vFt = aFt; gl_Position = uVP * vec4(aPos, 1.); }`;
+// aInf: the face's half-length in metres (a roof's slope length; the observatory's glazing),
+// the material, the hut, its storeys. aFt: which face, the finish (render 0, timber 1,
+// concrete 2, the observatory 3, plus 4 for a red roof), and one more number a face needs.
+const BFS = `#version 300 es
+precision highp float;
+in vec3 vP; in vec3 vN; in vec2 vUv; flat in vec4 vInf; flat in vec3 vFt;
+uniform vec3 uMoon; uniform float uDawn; uniform float uPre; uniform vec3 uCam; uniform float uT;
+uniform float uReveal; uniform vec4 uHut[24]; uniform vec4 uPanel; uniform float uPanelK;
+out vec4 o;
+${WIN}
+void main(){
+  int mat = int(vInf.y + .5), hut = int(vInf.z + .5);
+  float hl = vInf.x, lv = vInf.w, fh = vInf.z, face = vFt.x;
+  float tone = mod(vFt.y, 4.), red = step(3.5, vFt.y);
+  vec4 H = uHut[hut];
+  vec3 N = normalize(vN), V = normalize(uCam - vP);
+  float u = vUv.x, v = vUv.y;
+  float px = max(max(fwidth(u), fwidth(v)), 1e-4);      // how many metres one pixel holds here
+  float top = lv * 3. + .4;
+  vec3 alb = vec3(.2), em = vec3(0.);
+  float gloss = 0.;
+  if (mat <= 1) {
+    // the finish: pale render; dark boarding over a rendered ground floor; or concrete
+    if (tone < .5) alb = vec3(.54, .52, .49);
+    else if (tone < 1.5) alb = v < 3.1 ? vec3(.40, .38, .35)
+      : vec3(.20, .15, .11) * (.80 + .20 * mix(1., smoothstep(0., .05 + px, abs(fract(u / .34) - .5) * .34), smoothstep(.09, .03, px)));
+    else alb = vec3(.40, .41, .43) * (.90 + .10 * mix(1., smoothstep(0., .05 + px, abs(fract(v / 3.) - .5) * 3.), smoothstep(.12, .04, px)));
+    // under the ground floor, where the slope falls away: the stone the house stands on
+    if (v < 0.) alb = vec3(.25, .24, .23) * (.80 + .20 * hh(vec4(floor(u / 1.2 + floor(v / .55) * .5), floor(v / .55), fh, 1.)));
+    vec2 ws = winSpec(tone);
+    float P = ws.x, hw = ws.y, s = floor(v / 3.), y = v - s * 3., span = hl;
+    float cy = 1.65, ch = .72;                            // a pane's centre and half-height
+    bool row = v > .2 && s < lv;
+    if (mat == 1 && v > top) {
+      // the gable: a row of attic windows in the triangle under the roof
+      float rise = min(hl * 1.05, 9.);
+      s = lv; y = v - top; cy = 1.45; ch = .55;
+      span = hl * (1. - 2.4 / rise) - .3;
+      row = span > 1.3;
+    }
+    vec2 cx = winCol(u, max(span, 0.), P);
+    float detail = smoothstep(2.2, 4.5, P / px);          // a window has to be wide enough to draw
+    if (row && cx.x >= 0.) {
+      float d = max(abs(cx.y) - hw, abs(y - cy) - ch), aa = px * .8;
+      float pane = 1. - smoothstep(-aa, aa, d);
+      float lit = winLit(fh, face, s, cx.x, H, lv, uT);
+      vec3 tint = winTint(fh, face, s, cx.x);
+      // the glazing bars, where there is room to see them
+      float bars = min(1., smoothstep(.05 + px, .025, abs(cx.y)) + smoothstep(.05 + px, .025, abs(y - cy - .22))) * smoothstep(.10, .04, px);
+      float bri = s < .5 ? 1.2 * H.z : 1.;               // the room with the stove in it breathes
+      em += tint * pane * lit * bri * (1. - .8 * bars) * 1.5 * detail;
+      // and the light it puts on its own wall round it
+      em += tint * lit * exp(-max(d, 0.) / .5) * (1. - pane) * .10 * detail;
+      alb = mix(alb, vec3(.025, .032, .045), pane * (1. - lit) * detail);
+      gloss = pane * (1. - lit) * detail;
+    }
+    // From far off a pane is smaller than a pixel, and what is left is how lit the wall is.
+    float avg = .66 * (2. * hw * 2. * ch) / (P * 3.) * H.x * (1. - .8 * H.y);
+    em += vec3(1., .68, .38) * avg * 1.5 * (1. - detail) * step(.2, v) * step(v, lv * 3.);
+    // the door, on the front of the main wing, with its lamp
+    if (face < .5) {
+      float du = u + hl * .3;
+      float door = (1. - smoothstep(.62, .62 + px, abs(du))) * step(0., v) * (1. - smoothstep(2.25, 2.25 + px, v));
+      alb = mix(alb, vec3(.09, .065, .045), door);
+      em *= 1. - door;
+      vec2 lq = vec2(du, v - 2.75);
+      em += vec3(1., .76, .46) * exp(-dot(lq, lq) / max(.035, px * px * 2.)) * 2.4 * H.x * (1. - .85 * H.y);
+    }
+  } else if (mat == 2) {
+    // slate or shingle laid in courses; the red roof is the one on the saddle under Śnieżka
+    alb = red > .5 ? vec3(.32, .12, .08) : vec3(.15, .155, .17);
+    alb *= .82 + .18 * mix(1., smoothstep(0., .05 + px, abs(fract(v / .42) - .5) * .42), smoothstep(.12, .04, px));
+    gloss = .55;
+    // the ridge and the eaves catch more light than the slope between them
+    alb += vec3(.08, .09, .10) * (smoothstep(.5 + px, .1, hl - v) + smoothstep(.35 + px, .05, v));
+    // A few attic rooms have a window in the roof. From the basin the camera looks down on
+    // the roofs more than at the walls, so this is where most of a hut's light is seen.
+    float ra = vFt.z;
+    if (ra > 6. && hl > 6.) {
+      vec2 cx = winCol(u, ra - 1., 4.6);
+      float y = v - hl * .38;
+      if (cx.x >= 0.) {
+        float d = max(abs(cx.y) - .48, abs(y) - .62), aa = px * .8;
+        float pane = 1. - smoothstep(-aa, aa, d);
+        float lit = step(hh(vec4(fh, face + 20., cx.x, 3.)), .42) * winLit(fh, face + 20., lv, cx.x, H, lv + 1., uT);
+        float detail = smoothstep(2.2, 4.5, 4.6 / px);
+        em += winTint(fh, face + 20., lv, cx.x) * pane * lit * 1.35 * detail;
+        alb = mix(alb, vec3(.03, .035, .05), pane * (1. - lit) * detail);
+        em += vec3(1., .68, .38) * .06 * H.x * (1. - .8 * H.y) * (1. - detail);
+      }
+    }
+  } else if (mat == 3) {
+    alb = vec3(.24, .23, .22) * (vFt.z > .5 ? .35 : 1.);   // the stack, and the dark of its mouth
+  } else if (mat == 4) {
+    // a flat roof: gravel, and the lighter coping round its edge
+    float e = min(hl - abs(u), vFt.z - abs(v));
+    alb = mix(vec3(.30, .30, .31), vec3(.19, .19, .20), smoothstep(.3, .6 + px, e));
+  } else {
+    // the observatory: pale metal discs, each with its band of glass
+    alb = vec3(.56, .58, .61);
+    gloss = .35;
+    if (hl > .5) {
+      float yb = v - vFt.z;
+      float mull = smoothstep(.06 + px, .03, abs(fract(u / 1.7) - .5) * 1.7) * smoothstep(.10, .04, px);
+      float pane = smoothstep(.12, .28, yb);
+      float lit = step(hh(vec4(floor(u / 1.7), hl, 5., 1.)), .82) * H.x;
+      vec3 tint = hl < 1.5 ? vec3(1., .70, .42) : vec3(.82, .90, 1.);
+      em += tint * pane * lit * (1. - .8 * mull) * 1.25;
+      alb = mix(alb, vec3(.04, .05, .07), pane * (1. - lit));
+      gloss = mix(gloss, 1., pane);
+    }
+  }
+  // The light: the same moon as the land, with the same fill and the east coming up under
+  // it; and at dawn the low sun, which reaches the high buildings before the low ones.
+  float alt = smoothstep(7., 22.4, vP.y);
+  float dn = max(dot(N, uMoon), 0.), sky = clamp(N.y * .5 + .5, 0., 1.);
+  float fill = max(dot(N, normalize(vec3(.62, .46, -.64))), 0.);
+  vec3 silver = mix(vec3(.34, .45, .58), vec3(.78, .88, 1.02), alt);
+  // the sky, the moonlit slopes round it throwing their light back up at the walls, and the moon
+  vec3 night = alb * (vec3(.075, .105, .155) * (.45 + sky) + silver * .13 * (1. - sky) + vec3(.016, .026, .044) * fill * 2.4
+    + silver * pow(dn, 1.2) * 1.6);
+  // and the edge of every face against the night, which is what the eye finds first
+  night += silver * pow(1. - abs(dot(N, V)), 4.) * .05;
+  float de = max(dot(N, normalize(vec3(-.95, .12, .28))), 0.);
+  vec3 ember = mix(vec3(.30, .42, .66), vec3(1., .49, .25), uPre * uPre);
+  night += alb * ember * de * de * (.03 + .18 * uPre) * (1. - uDawn);
+  night += silver * pow(max(dot(reflect(-uMoon, N), V), 0.), 16.) * gloss * .42;   // the moon off slate and glass
+  // and the sky off them, strongest where a roof is seen at a slant: what tells a roof from a wall
+  night += vec3(.075, .100, .150) * (.25 + 1.2 * pow(1. - max(dot(N, V), 0.), 3.)) * gloss * step(1.5, float(mat)) * step(float(mat), 2.5);
+  vec3 sunD = normalize(vec3(-.95, .17, .26));
+  float dd = max(dot(N, sunD), 0.), sun = clamp((uDawn * 1.6 - .46 * (1. - alt)) / .55, 0., 1.);
+  vec3 day = alb * (vec3(.36, .29, .29) * (.35 + .65 * sky) + vec3(1., .64, .42) * dd * 1.6 * sun)
+    + vec3(1., .72, .48) * pow(max(dot(reflect(-sunD, N), V), 0.), 16.) * gloss * .5 * sun;
+  vec3 col = mix(night, day, uDawn);
+  col /= 1. + col * .7;
+  float d = length(vP - uCam), fog = fogOf(d, uDawn);
+  col = mix(col, airOf(d, uDawn), fog);
+  em *= H.w * (1. - fog * .55);
+  col += em / (1. + em * .5);
+  float a = smoothstep(vP.y - 1.6, vP.y, uReveal) * (1. - quietOf(uPanel, uPanelK) * .75);
+  o = vec4(col * a, a);
+}`;
+// What the windows throw on the ground outside: a patch of light for each lit window on the
+// ground floor, spreading as it goes out, a longer and fainter one from the floor above, and
+// the wash of all of them together. Laid on the land round each wing and added to it.
+const DVS = `#version 300 es
+precision highp float;
+in vec3 aPos; in vec2 aL; in vec4 aW; in vec2 aF;
+uniform mat4 uVP;
+out vec3 vP; out vec2 vL; flat out vec4 vW; flat out vec2 vF;
+void main(){ vP = aPos; vL = aL; vW = aW; vF = aF; gl_Position = uVP * vec4(aPos, 1.); }`;
+const DFS = `#version 300 es
+precision highp float;
+in vec3 vP; in vec2 vL; flat in vec4 vW; flat in vec2 vF;
+uniform vec4 uHut[24]; uniform float uT; uniform float uDawn; uniform float uReveal; uniform vec3 uCam;
+uniform vec4 uPanel; uniform float uPanelK;
+out vec4 o;
+${WIN}
+float wallLight(float d, float t, float hl, float face, float hut, float lv, vec4 H, vec2 ws){
+  if (d < 0.) return 0.;
+  vec2 cx = winCol(t, hl, ws.x);
+  float L = 0.;
+  if (cx.x >= 0.) {
+    float w0 = ws.y + d * .45;
+    L += winLit(hut, face, 0., cx.x, H, lv, uT) * .62 * (1. - smoothstep(w0 - .55, w0 + 1.1, abs(cx.y))) * exp(-d / 2.8) * smoothstep(0., .9, d);
+    if (lv > 1.5) {
+      float w1 = ws.y + d * .30;
+      L += winLit(hut, face, 1., cx.x, H, lv, uT) * .26 * (1. - smoothstep(w1 - .6, w1 + 1.2, abs(cx.y))) * exp(-d / 5.) * smoothstep(1.5, 4.5, d);
+    }
+  }
+  return L + .22 * exp(-d / 3.2) * (1. - smoothstep(hl - 1., hl + 5., abs(t))) * H.x * (1. - .8 * H.y);
+}
+void main(){
+  float ha = vW.x, hb = vW.y, hut = vW.z, lv = vW.w, f0 = vF.x;
+  vec4 H = uHut[int(hut + .5)];
+  vec2 ws = winSpec(vF.y);
+  float L = wallLight(vL.y - hb, vL.x, ha, f0, hut, lv, H, ws) + wallLight(-vL.y - hb, vL.x, ha, f0 + 1., hut, lv, H, ws)
+          + wallLight(vL.x - ha, vL.y, hb, f0 + 2., hut, lv, H, ws) + wallLight(-vL.x - ha, vL.y, hb, f0 + 3., hut, lv, H, ws);
+  // the door lamp, on the front of the main wing
+  if (f0 < .5) { vec2 dq = vec2(vL.x + ha * .3, vL.y - hb - 1.2); L += 1.1 * exp(-dot(dq, dq) / 5.) * H.x * (1. - .85 * H.y); }
+  L *= 1. - smoothstep(9., 13., max(abs(vL.x) - ha, abs(vL.y) - hb));
+  float d = length(vP - uCam), fog = fogOf(d, uDawn);
+  float k = smoothstep(vP.y - 1.6, vP.y, uReveal) * H.w * (1. - .78 * uDawn) * (1. - fog) * (1. - quietOf(uPanel, uPanelK) * .75);
+  vec3 c = vec3(1., .56, .26) * L * .62 * k;
+  o = vec4(c / (1. + c * .6), 0.);
+}`;
 
 function start(bake, gl) {
   if (!gl) throw new Error('no webgl2');
@@ -868,21 +1037,137 @@ function start(bake, gl) {
   const SH = F.shelters;
   let xlo = 1e9, xhi = -1e9;
   for (const s of SH) { xlo = Math.min(xlo, s.x); xhi = Math.max(xhi, s.x); }
+  // ---------------- the shelters, as buildings ----------------
+  // Each one is its real building: the survey's footprint cut into wings, turned the way it
+  // stands, on the terrace the bake levelled for it. Storeys of windows, a roof, a chimney,
+  // and a plinth of stone where the slope still falls away under it. Its windows throw their
+  // light on the ground outside (DV), and its smoke leaves from its chimney (CHIM).
+  const BV = [], BI = [], DV = [], DI = [], CHIM = [], HUTC = [];
+  const OBG = SH.length + 1;                          // the observatory's light group, after the relay's
+  const vtx = (p, n, u, v, inf, ft) => { BV.push(p[0], p[1], p[2], n[0], n[1], n[2], u, v, inf[0], inf[1], inf[2], inf[3], ft[0], ft[1], ft[2]); return BV.length / 15 - 1; };
+  const quadI = (a, b, c, d) => BI.push(a, b, c, a, c, d);
+  const face4 = (P, n, U, W, inf, ft) => quadI(...P.map((p, k) => vtx(p, n, U[k], W[k], inf, ft)));
+  const unit = v => { const l = Math.hypot(...v) || 1; return v.map(x => x / l); };
+  SH.forEach((s, hut) => {
+    const b = s.b;
+    if (!b) { HUTC.push([s.x, heightAt(s.x, s.z) + .2, s.z]); CHIM.push(null); return; }
+    const tone = { p: 0, t: 1, c: 2 }[b.tone] || 0, fin = tone + (s.n === 'Dom Slaski' ? 4 : 0);
+    let light = null, chim = null;
+    wingsOf(s).forEach(({ x, z, A, B, ha, hb, lv, m }, wi) => {
+      const P = (al, ac, y) => [x + (A[0] * al + B[0] * ac) * m, y, z + (A[1] * al + B[1] * ac) * m];
+      const gs = [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 0], [0, 1], [0, -1], [1, 0], [-1, 0]]
+        .map(([i, j]) => { const p = P(i * ha, j * hb, 0); return heightAt(p[0], p[2]); });
+      // The ground floor is set into the slope, the way a mountain hut is built: dug in on the
+      // uphill side, on a plinth of stone on the downhill one. The land here is drawn four
+      // times as steep as it is, so a floor level with the uphill corner stood the big huts on
+      // stone towers.
+      const floorY = gs.reduce((a, g) => a + g, 0) / gs.length + .01, baseY = Math.min(...gs) - .3;
+      const H = lv * 3 + .4, top = floorY + H * m;
+      const flat = b.roof === 'f', hip = b.roof === 'h';
+      const rise = flat ? 0 : Math.min(hb * 1.05, 9), ridgeY = top + rise * m;
+      const vb = (baseY - floorY) / m;
+      const nA = [A[0], 0, A[1]], nB = [B[0], 0, B[1]];
+      const ft = (f, z) => [wi * 4 + f, fin, z || 0];
+      // the long walls, and the ends: a gable up to the ridge, or plain under a hip or a flat roof
+      for (const sg of [1, -1]) {
+        face4([P(-ha, sg * hb, baseY), P(ha, sg * hb, baseY), P(ha, sg * hb, top), P(-ha, sg * hb, top)],
+          nB.map(x => x * sg), [-ha, ha, ha, -ha], [vb, vb, H, H], [ha, 0, hut, lv], ft(sg > 0 ? 0 : 1));
+        const n = nA.map(x => x * sg), I = [hb, 1, hut, lv], F2 = ft(sg > 0 ? 2 : 3);
+        const k = [P(sg * ha, -hb, baseY), P(sg * ha, hb, baseY), P(sg * ha, hb, top), P(sg * ha, -hb, top)]
+          .map((p, j) => vtx(p, n, [-hb, hb, hb, -hb][j], [vb, vb, H, H][j], I, F2));
+        quadI(...k);
+        if (!flat && !hip) BI.push(k[3], k[2], vtx(P(sg * ha, 0, ridgeY), n, 0, H + rise, I, F2));
+      }
+      // the roof, overhanging its walls
+      const o = .8, sl = rise / Math.max(hb, .1), eY = top - o * sl * m;
+      const slen = Math.hypot(hb + o, rise + o * sl);
+      if (flat) {
+        quadI(...[P(-ha, -hb, top), P(ha, -hb, top), P(ha, hb, top), P(-ha, hb, top)]
+          .map((p, j) => vtx(p, [0, 1, 0], [-ha, ha, ha, -ha][j], [-hb, -hb, hb, hb][j], [ha, 4, hut, lv], ft(0, hb))));
+      } else {
+        const rl = hip ? Math.max(ha - hb, ha * .3) : ha + o;
+        for (const sg of [1, -1]) {
+          const n = unit([B[0] * sg * sl, 1, B[1] * sg * sl]);
+          quadI(...[P(-(ha + o), sg * (hb + o), eY), P(ha + o, sg * (hb + o), eY), P(rl, 0, ridgeY), P(-rl, 0, ridgeY)]
+            .map((p, j) => vtx(p, n, [-(ha + o), ha + o, rl, -rl][j], [0, 0, slen, slen][j], [slen, 2, hut, lv], ft(sg > 0 ? 0 : 1, hip ? 0 : ha + o))));
+          if (hip) {
+            // the hipped ends come down to the eaves too
+            const run = ha + o - rl, s2 = Math.hypot(run, rise + o * sl), g2 = (ridgeY - eY) / (run * m);
+            const n2 = unit([A[0] * sg * g2, 1, A[1] * sg * g2]), I2 = [s2, 2, hut, lv], F2 = ft(sg > 0 ? 2 : 3);
+            BI.push(vtx(P(sg * (ha + o), -(hb + o), eY), n2, -(hb + o), 0, I2, F2), vtx(P(sg * (ha + o), hb + o, eY), n2, hb + o, 0, I2, F2),
+              vtx(P(sg * rl, 0, ridgeY), n2, 0, s2, I2, F2));
+          }
+        }
+      }
+      // the chimney, on the main wing, a stack wide enough to be seen
+      if (wi === 0 && !flat) {
+        const al = ha * .38, ac = hb * .45, cw = 1.3, yr = top + rise * .55 * m - .4 * m, yt = ridgeY + 1.6 * m;
+        const C = (i, j, y) => P(al + i * cw, ac + j * cw, y);
+        for (const [[i0, j0], [i1, j1], n] of [[[-1, -1], [1, -1], nB.map(x => -x)], [[1, -1], [1, 1], nA], [[1, 1], [-1, 1], nB], [[-1, 1], [-1, -1], nA.map(x => -x)]])
+          face4([C(i0, j0, yr), C(i1, j1, yr), C(i1, j1, yt), C(i0, j0, yt)], n, [0, 1, 1, 0], [0, 0, 1, 1], [cw, 3, hut, lv], [99, fin, 0]);
+        face4([C(-1, -1, yt), C(1, -1, yt), C(1, 1, yt), C(-1, 1, yt)], [0, 1, 0], [0, 1, 1, 0], [0, 0, 1, 1], [cw, 3, hut, lv], [99, fin, 1]);
+        chim = P(al, ac, yt);
+      }
+      if (wi === 0) light = P(0, 0, floorY + H * .55 * m);
+      // the ground round the wing, for the light its windows throw
+      const M = 13, G = 14, base = DV.length / 11;
+      for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) {
+        const al = -(ha + M) + 2 * (ha + M) * i / G, ac = -(hb + M) + 2 * (hb + M) * j / G, p = P(al, ac, 0);
+        DV.push(p[0], heightAt(p[0], p[2]) + .02, p[2], al, ac, ha, hb, hut, lv, wi * 4, tone);
+      }
+      for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { const a = base + j * (G + 1) + i; DI.push(a, a + 1, a + G + 2, a, a + G + 2, a + G + 1); }
+    });
+    HUTC.push(light); CHIM.push(chim);
+  });
+  // Śnieżka's observatory: three discs, each smaller than the one under it and each with its
+  // band of glass - the restaurant's warm at the bottom, the instruments' cool above.
+  {
+    const OBc = F.landmarks.obs, og = heightAt(OBc.x, OBc.z), m = BK, segs = 44;
+    const prof = [[9.5, -14, 0], [9.5, 2.2, 0], [18, 4.2, 0], [18, 6.4, 1], [10.5, 7.8, 0], [7, 8, 0], [7, 9.6, 0], [13.5, 11, 0], [13.5, 12.9, 2],
+      [7.5, 14, 0], [4.6, 14.2, 0], [4.6, 15.6, 0], [9, 16.6, 0], [9, 18.1, 2], [3.5, 19, 0], [.01, 19.3, 0]];
+    const Q = (r, y, a) => [OBc.x + Math.cos(a) * r * m, og + y * m, OBc.z + Math.sin(a) * r * m];
+    for (let j = 1; j < prof.length; j++) {
+      const [r0, y0] = prof[j - 1], [r1, y1, gz] = prof[j];
+      const nr = y1 - y0, ny = -(r1 - r0), nl = Math.hypot(nr, ny) || 1, am = (r0 + r1) / 2;
+      for (let k = 0; k < segs; k++) {
+        const a0 = k / segs * 2 * Math.PI, a1 = (k + 1) / segs * 2 * Math.PI;
+        quadI(...[[r0, y0, a0], [r0, y0, a1], [r1, y1, a1], [r1, y1, a0]]
+          .map(([r, y, a]) => vtx(Q(r, y, a), [Math.cos(a) * nr / nl, ny / nl, Math.sin(a) * nr / nl], a * am, y, [gz, 5, OBG, 3], [k, 3, y0])));
+      }
+    }
+    // and the mast on top
+    const C = (i, j, y) => [OBc.x + i * .7 * m, og + y * m, OBc.z + j * .7 * m];
+    for (const [[i0, j0], [i1, j1], n] of [[[-1, -1], [1, -1], [0, 0, -1]], [[1, -1], [1, 1], [1, 0, 0]], [[1, 1], [-1, 1], [0, 0, 1]], [[-1, 1], [-1, -1], [-1, 0, 0]]])
+      face4([C(i0, j0, 19), C(i1, j1, 19), C(i1, j1, 26), C(i0, j0, 26)], n, [0, 1, 1, 0], [0, 0, 1, 1], [.7, 3, OBG, 3], [99, 3, 0]);
+  }
+  const bld = program(BVS, BFS), dec = program(DVS, DFS);
+  const UB = uni(bld, ['uVP', 'uMoon', 'uDawn', 'uPre', 'uCam', 'uT', 'uReveal', 'uHut', 'uPanel', 'uPanelK']);
+  const UD = uni(dec, ['uVP', 'uHut', 'uT', 'uDawn', 'uReveal', 'uCam', 'uPanel', 'uPanelK']);
+  const mkMesh = (prog, V, I, stride, attrs) => {
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(V), gl.STATIC_DRAW);
+    attrs.forEach(([nm, sz, off]) => { const l = gl.getAttribLocation(prog, nm); if (l >= 0) { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, sz, gl.FLOAT, false, stride, off); } });
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(I), gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+    return vao;
+  };
+  const bvao = mkMesh(bld, BV, BI, 60, [['aPos', 3, 0], ['aNrm', 3, 12], ['aUv', 2, 24], ['aInf', 4, 32], ['aFt', 3, 48]]), BN = BI.length;
+  const dvao = mkMesh(dec, DV, DI, 44, [['aPos', 3, 0], ['aL', 2, 12], ['aW', 4, 20], ['aF', 2, 36]]), DN = DI.length;
+  const HU = new Float32Array(24 * 4);              // each hut: woken, put out by the day, breath, dimmed under words
   // the order the huts light up in, as the land comes up under them: lowest first
   const byH = SH.map((s, i) => i).sort((a, b) => heightAt(SH[a].x, SH[a].z) - heightAt(SH[b].x, SH[b].z));
   const rank = new Array(SH.length); byH.forEach((i, r) => rank[i] = r / Math.max(1, SH.length - 1));
   const put = (x, z, lift, a, k, grp, on, out, floor) =>
     PTS.push([x, heightAt(x, z) + lift, z, a, k, grp === undefined ? -1 : grp, on || 0, out === undefined ? .3 : out, floor === undefined ? .16 : floor]);
   SH.forEach((s, i) => {
-    const g = LAMPS.length; LAMPS.push([s.x, s.z]);
+    const g = LAMPS.length, hc = HUTC[i]; LAMPS.push([hc[0], hc[2]]);
     // Each hearth keeps its own time: a phase for the breathing, a moment at which it is
     // lit, and the moment the day reaches it. East is -x, so the east end goes out first.
     GRP.push({ home: 1, ph: (i * 2.39996) % 6.2832 });
     const on = .22 + 1.80 * (rank[i] * .80 + ((i * 7919) % 101) / 101 * .20);
     const out = .20 + .62 * (s.x - xlo) / (xhi - xlo) + .11 * rank[i];
-    // the hut, its walls on the ground. Its windows are its lights: a lamp set beside a
-    // building this size lands on its roof
-    put(s.x, s.z, -.04, s.p ? 1 : .6, s.p ? 6 : 7, g, on, out, .17);
+    // the glow of the hut in the air, from inside the building: its windows are its lights
+    put(hc[0], hc[2], hc[1] - heightAt(hc[0], hc[2]), s.p ? 1 : .6, s.p ? 6 : 7, g, on, out, .17);
   });
   // The relay above the Śnieżne Kotły and the observatory on Śnieżka are instruments, not
   // homes. They do not breathe, they do not smoke, and they do not go out when the day
@@ -892,7 +1177,8 @@ function start(bake, gl) {
   const beaconAt0 = PTS.length;
   put(RT.x, RT.z, .88, 1, 3, grt, .06, 1.2, 1);    // the top of the mast as it is drawn
   const OB = F.landmarks.obs, gob = LAMPS.length; LAMPS.push([OB.x, OB.z]); GRP.push({ home: 0, ph: 0 });
-  put(OB.x, OB.z, -.04, 1, 8, gob, .10, .42, .44);
+  if (gob !== OBG) console.warn('the observatory light group moved');
+  put(OB.x, OB.z, .22, 1, 8, gob, .10, .42, .44);   // the glow round the discs, from their middle
   // The walker of the finale: one lamp that goes the length of the crest trail with the
   // camera, from the Szrenica shelter to the summit, and is put out there by the day.
   const walkerAt = PTS.length;
@@ -926,11 +1212,9 @@ function start(bake, gl) {
   const SMOKE = [];
   SH.forEach((s, i) => {
     const n = s.p ? 8 : 3;
-    // the top of the flue as the hut is drawn: a hut's width in its sprite is about half
-    // that width in land, at the lenses this flight uses
-    const hw = s.p ? 2.3 : 1.75, y0 = heightAt(s.x, s.z) + hw * .265;
+    const ch = CHIM[i] || [s.x, heightAt(s.x, s.z) + .5, s.z];     // the top of its chimney
     for (let k = 0; k < n; k++) SMOKE.push({
-      g: i, x: s.x, y: y0, z: s.z, fl: -.102 * hw,
+      g: i, x: ch[0], y: ch[1], z: ch[2],
       ph: k / n + ((i * 37 + k * 11) % 23) / 460,
       rate: (s.p ? .135 : .115) * (.88 + ((i * 13 + k * 5) % 7) / 26),
       rise: s.p ? 1.30 : .92,
@@ -994,13 +1278,13 @@ function start(bake, gl) {
   };
   // the smoke, placed the same way: an age that cycles, a climb that slows, a drift that does
   // not. Under reduced motion the clock stands still and each puff keeps the age it has.
-  const placeSmoke = (time, lit, rt) => {
+  const placeSmoke = (time, lit) => {
     for (let i = 0; i < SMOKE.length; i++) {
       const s = SMOKE[i], age = (time * s.rate + s.ph) % 1, o = (SN0 + i) * 6;
       const w = Math.sin(age * 4.1 + s.ph * 6.2832) * .06 * age;
-      ap[o] = s.x + s.fl * rt[0] + s.dx * age * age + w;
+      ap[o] = s.x + s.dx * age * age + w;
       ap[o + 1] = s.y + s.rise * age * (1.35 - .35 * age);
-      ap[o + 2] = s.z + s.fl * rt[2] + s.dz * age * age + w * .6;
+      ap[o + 2] = s.z + s.dz * age * age + w * .6;
       // up out of the flue at full strength and thinning the whole way, which is what a
       // chimney does; a puff that fades in from nothing starts in mid-air
       const up = 1 - age;
@@ -1200,6 +1484,8 @@ function start(bake, gl) {
       const sc = canvas.height / ch;
       gl.useProgram(land); gl.uniform4f(UL.uPanel, (l - 14) * sc, (ch - b - 18) * sc, (r + 14) * sc, (ch - t + 18) * sc);
       gl.useProgram(ribs); gl.uniform4f(UR.uPanel, (l - 14) * sc, (ch - b - 18) * sc, (r + 14) * sc, (ch - t + 18) * sc);
+      gl.useProgram(bld); gl.uniform4f(UB.uPanel, (l - 14) * sc, (ch - b - 18) * sc, (r + 14) * sc, (ch - t + 18) * sc);
+      gl.useProgram(dec); gl.uniform4f(UD.uPanel, (l - 14) * sc, (ch - b - 18) * sc, (r + 14) * sc, (ch - t + 18) * sc);
       panelK = 1;
     }
 
@@ -1236,6 +1522,13 @@ function start(bake, gl) {
         const burn = on * (1 - (1 - q[8]) * sst(q[7], q[7] + .26, dawn));
         a *= burn;
         if (k === 6 || k === 7) { warmS += burn; shLit[q[5]] = burn; }
+        // its windows come on one by one over a couple of seconds from its turn, and go out
+        // one by one as the day reaches it; the observatory's never do
+        if (k >= 6 && k <= 8) {
+          const g = q[5] * 4;
+          HU[g] = reduce ? 1 : sst(q[6], q[6] + 2.4, lu) * sst(q[1] - .7, q[1] + .3, reveal);
+          HU[g + 1] = k === 8 ? 0 : sst(q[7] - .04, q[7] + .34, dawn);
+        }
         else if (k === 8 || k === 9) coolS += burn;
         else if (k === 4) { townS += burn; townN++; }
       }
@@ -1251,10 +1544,11 @@ function start(bake, gl) {
       ap[o] = w[0]; ap[o + 1] = w[1] + .12; ap[o + 2] = w[2];
       ap[o + 3] = sst(0, 2, walk) * (1 - .8 * sst(L - 5, L, walk)) * .75;
     }
+    for (let i = 0; i < LAMPS.length && i < 24; i++) { HU[i * 4 + 2] = breath[i]; HU[i * 4 + 3] = mdim[i]; }
     // what the ground under them is given: the average of what is actually burning
     const warmK = warmS / SH.length, coolK = coolS * .5, townK = townN ? townS / townN : 0;
 
-    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     // the sky first, across the whole frame and writing no depth, so the crest has something
@@ -1315,8 +1609,25 @@ function start(bake, gl) {
     gl.bindVertexArray(rvao); gl.drawElements(gl.TRIANGLES, RN, gl.UNSIGNED_INT, 0);
     gl.disable(gl.POLYGON_OFFSET_FILL); gl.depthMask(true);
 
+    // the buildings: solid, over the land and under every light. Each marks the stencil, so
+    // the glow in the air round a hut can lie round it and never on its walls.
+    gl.useProgram(bld); gl.uniformMatrix4fv(UB.uVP, false, VP);
+    gl.uniform3f(UB.uMoon, MOON[0], MOON[1], MOON[2]); gl.uniform1f(UB.uDawn, dawn); gl.uniform1f(UB.uPre, pre);
+    gl.uniform3f(UB.uCam, eye[0], eye[1], eye[2]); gl.uniform1f(UB.uT, reduce ? 0 : time); gl.uniform1f(UB.uReveal, reveal);
+    gl.uniform4fv(UB.uHut, HU); gl.uniform1f(UB.uPanelK, panelK);
+    gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.ALWAYS, 1, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+    gl.bindVertexArray(bvao); gl.drawElements(gl.TRIANGLES, BN, gl.UNSIGNED_INT, 0);
+    gl.disable(gl.STENCIL_TEST);
+    // and what their windows throw on the ground outside, added to the land
+    gl.useProgram(dec); gl.uniformMatrix4fv(UD.uVP, false, VP);
+    gl.uniform4fv(UD.uHut, HU); gl.uniform1f(UD.uT, reduce ? 0 : time); gl.uniform1f(UD.uDawn, dawn);
+    gl.uniform1f(UD.uReveal, reveal); gl.uniform3f(UD.uCam, eye[0], eye[1], eye[2]); gl.uniform1f(UD.uPanelK, panelK);
+    gl.depthMask(false); gl.blendFunc(gl.ONE, gl.ONE); gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1, -160);
+    gl.bindVertexArray(dvao); gl.drawElements(gl.TRIANGLES, DN, gl.UNSIGNED_INT, 0);
+    gl.disable(gl.POLYGON_OFFSET_FILL); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(true);
+
     placeAgents(reduce ? 7 : time, hikeK);
-    placeSmoke(reduce ? 11 : time, shLit, right);
+    placeSmoke(reduce ? 11 : time, shLit);
     gl.bindBuffer(gl.ARRAY_BUFFER, abuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, ap);
     gl.useProgram(dots); gl.uniformMatrix4fv(UP.uVP, false, VP); gl.uniform1f(UP.uDawn, dawn);
     gl.uniform3f(UP.uScale, canvas.height * .9, canvas.height / ch, SMALL ? .72 : 1);
@@ -1329,11 +1640,14 @@ function start(bake, gl) {
     gl.uniform2f(UP.uMoonS, msx / msl, msy / msl);
     gl.uniform3f(UP.uCamP, eye[0], eye[1], eye[2]);
     gl.depthMask(false); gl.bindVertexArray(avao);
-    // the huts as buildings, laid over the land; then every light, added on top
+    // the relay laid over the land; then every light, added on top
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.uniform1i(UP.uPass, 0);
     gl.drawArrays(gl.POINTS, AN, PTS.length);
     gl.blendFunc(gl.ONE, gl.ONE); gl.uniform1i(UP.uPass, 1);
-    gl.drawArrays(gl.POINTS, 0, SN0 + SMOKE.length);
+    gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.NOTEQUAL, 1, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+    gl.drawArrays(gl.POINTS, 0, SN0);
+    gl.disable(gl.STENCIL_TEST);
+    gl.drawArrays(gl.POINTS, SN0, SMOKE.length);     // smoke can drift in front of a roof
     gl.depthMask(true); gl.bindVertexArray(null);
 
     // labels: never on top of the words, never off the edge, never on each other. The ones
@@ -1589,7 +1903,7 @@ async function decodeHere(url) {
 
 (async () => {
   let glctx = null;
-  try { glctx = canvas.getContext('webgl2', { antialias: true, alpha: true, premultipliedAlpha: true, powerPreference: 'high-performance' }); } catch (e) { glctx = null; }
+  try { glctx = canvas.getContext('webgl2', { antialias: true, alpha: true, premultipliedAlpha: true, stencil: true, powerPreference: 'high-performance' }); } catch (e) { glctx = null; }
   const hm = new URL(`karkonosze-${N}.png`, DATA).href;
   try {
     const res = await fetch(new URL('karkonosze.json', DATA));
@@ -1603,6 +1917,11 @@ async function decodeHere(url) {
       return Math.max(b - a, d - c) > .6;
     });
     buildStory();
+    // where the bake levels a terrace: under every wing of every shelter
+    F.pads = F.shelters.flatMap(s => wingsOf(s).map(w => ({ x: w.x, z: w.z, A: w.A, B: w.B, hu: w.ha * w.m, hv: w.hb * w.m })));
+    // and the top of Śnieżka, which is a small level summit with the observatory standing on it
+    const ob = F.landmarks.obs;
+    F.pads.push({ x: ob.x, z: ob.z, A: [1, 0], B: [0, 1], hu: .22, hv: .22 });
     const worker = new Worker(new URL('./world-bake.js', import.meta.url));
     worker.onmessage = async e => {
       if (e.data.needPixels) {
