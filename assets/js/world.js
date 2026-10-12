@@ -42,6 +42,35 @@ const MOON = (() => {
   return v.map(k => k / l);
 })();
 
+// ---------------- the sea of fog ----------------
+// A clear October night ends with the valleys full. The ground gives its heat up to the
+// sky, the cold air runs downhill, and an hour before dawn the basin is a lake of fog with
+// the range standing out of it. It is the sight these mountains are known for and half the
+// reason anyone walks up Śnieżka in the dark.
+// Each drainage holds its own pool and fills to its own brim. There are two here: the
+// Jelenia Góra basin on the Polish side, whose floor lies at 350-450 m and which fills to
+// about 620 - which is why Szklarska Poręba at 630-700 m is a resort above the fog, and why
+// the trailhead the third stop is about stands clear of it - and the Czech valleys behind
+// the crest, the Labe above Špindlerův Mlýn and the Mumlava at Harrachov, whose floors are
+// at 700-900 m already and which fill to about 900.
+const FOG_N = hOf(620), FOG_S = hOf(900);
+// The crest as a line in plan, Szrenica to Śnieżka: how far north of it a point lies says
+// which pool it drains into. The brim changes across the crest itself, where both of them
+// are three hundred metres underground, so no valley ever sees the seam.
+const FOG_CZ = 17.74, FOG_CK = .3845;
+// The basin does not end where the survey does: it runs on past the north edge of the sheet
+// to Jelenia Góra and beyond, and so does the fog in it. The layer is drawn over that much
+// more ground than the map holds, standing on the height the edge of the map last had, so
+// the sea reaches the horizon instead of stopping at a line ruled across it.
+const FOG_EXT = 24;
+// a smoothstep out here, where the drawing has not started and start()'s own one is not in scope
+const sst0 = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+// where the top of the layer stands over a point of the map, the same answer the two fog
+// shaders work out for themselves, without the swell on it
+const fogTopAt = (x, z) => FOG_N + (FOG_S - FOG_N) * sst0(2, -7, z + FOG_CZ - FOG_CK * x);
+// how far under the brim a light stands, 0 above it and 1 once the layer has swallowed it
+const drownAt = (x, y, z) => sst0(-.1, 1., fogTopAt(x, z) - y);
+
 let F = null;            // the real features, fetched below
 let WAY = [], LABELS = [], GRAT = [];
 
@@ -1172,6 +1201,130 @@ void main(){
   o = vec4(c / (1. + c * .6), 0.);
 }`;
 
+// ---------------- the fog, as a surface ----------------
+// Where the top of the layer stands, shared by the two shaders that draw it. A cold pool's
+// surface is nearly flat - that is what tells you at a glance that it is fog and not cloud -
+// so the swell on it is twenty-odd metres over two kilometres, with finer ripples riding on
+// that. It comes back with its own gradient, because the only thing that can model a
+// surface this flat is a moon thirteen degrees above the horizon, and the moon needs a normal.
+const FOGG = `
+float fh(vec2 p){ p = fract(p * vec2(127.31, 311.7)); p += dot(p, p.yx + 41.17); return fract(p.x * p.y * 95.43); }
+// value noise, with the gradient that goes with it
+vec3 vnd(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  float a = fh(i), b = fh(i + vec2(1, 0)), c = fh(i + vec2(0, 1)), d = fh(i + vec2(1, 1));
+  vec2 u = f * f * (3. - 2. * f), du = 6. * f * (1. - f);
+  return vec3(a + (b - a) * u.x + (c - a) * u.y + (a - b - c + d) * u.x * u.y,
+    du.x * ((b - a) + (a - b - c + d) * u.y),
+    du.y * ((c - a) + (a - b - c + d) * u.x));
+}
+// which pool this point lies in, and how high that one fills
+float fogBrim(vec2 p){
+  return mix(${FOG_N.toFixed(4)}, ${FOG_S.toFixed(4)}, smoothstep(2., -7., p.y + ${FOG_CZ} - ${FOG_CK} * p.x));
+}
+// x: the top, in the land's own units. yz: the way it leans, in x and in z.
+vec3 fogTop(vec2 p, float t){
+  float brim = fogBrim(p);
+  // The swell, drifting with the same light air off the Czech side that carries the smoke
+  // from the chimneys. Slowly: a pool of cold air an hour before dawn does not run anywhere,
+  // it changes shape over minutes, and anything faster reads as cotton wool rolling downhill.
+  // Three scales: a swell three kilometres long and twenty metres high, a one-kilometre one
+  // riding on it, and a last fine one which is there to make the shoreline wander rather than
+  // to be seen - a fog top broken into anything smaller than that reads as cloud from above.
+  // A phone gets the first two: it is the shoreline that would miss the third, and a phone
+  // holds the whole range in four hundred pixels.
+  vec2 w = vec2(-.837, .546);
+  vec3 a = vnd(p * .085 + w * (t * .013));
+  vec3 b = vnd(p * .210 - w.yx * (t * .009));
+${SMALL ? `  return vec3(brim + (a.x - .5) * .68 + (b.x - .5) * .30, a.yz * .0578 + b.yz * .0630);`
+    : `  vec3 c = vnd(p * .520 + w * (t * .020));
+  return vec3(brim + (a.x - .5) * .68 + (b.x - .5) * .28 + (c.x - .5) * .09,
+    a.yz * .0578 + b.yz * .0588 + c.yz * .0281);`}
+}`;
+// The sheet itself: one horizontal mesh over the whole map at the brim of whichever pool it
+// is over. It is fine enough that the swell on it reads as a curve rather than as folds;
+// nothing else here needs resolution, because where the fog ends is worked out per pixel
+// from the height map and not from this mesh.
+const IVS = `#version 300 es
+precision highp float;
+in vec2 aXZ;
+uniform mat4 uVP; uniform float uT;
+out vec3 vP;
+${FOGG}
+void main(){
+  vP = vec3(aXZ.x, fogTop(aXZ, uT).x, aXZ.y);
+  gl_Position = uVP * vec4(vP, 1.);
+}`;
+const IFS = `#version 300 es
+precision highp float;
+in vec3 vP;
+uniform sampler2D uMap; uniform sampler2D uAux; uniform vec4 uRect;
+uniform vec3 uCam; uniform vec3 uMoon; uniform float uDawn; uniform float uPre; uniform float uT;
+uniform vec3 uLit;      // how brightly the shelters, the stations and the towns are burning
+uniform float uReveal;
+out vec4 o;
+${FOGG}
+void main(){
+  vec2 p = vP.xz;
+  vec3 s = fogTop(p, uT);
+  vec2 uv = vec2((p.x - uRect.x) / uRect.z + .5, .5 - (p.y - uRect.y) / uRect.w);
+  float th = s.x - texture(uMap, uv).r;         // how deep the layer stands over this ground
+  if (th <= .004) discard;                      // the land here is out in the clear air
+  vec3 V = vP - uCam; float d = length(V); V /= d;
+  // What anyone actually sees is the air they are looking through, so the sea thickens
+  // towards its far shore of its own accord: the same forty metres of fog are a haze looked
+  // down into and a solid floor looked along. It is also what keeps the near edge honest -
+  // a bank lying thin over a shoulder of the hill stays see-through there and nowhere else.
+  float a = 1. - exp(-th * 1.5 / max(-V.y, .055));
+  // the top as a surface, and the light on it
+  vec3 N = normalize(vec3(-s.y, 1., -s.z));
+  float moon = max(dot(N, uMoon), 0.), sky = clamp(N.y * .5 + .5, 0., 1.);
+  // What the moon does to it. A fog top is a horizontal surface and the moon stands thirteen
+  // degrees up, so it takes a sixth of what a flank turned square to the moon takes - which
+  // is why the sea reads as a pale floor under a silver range and never brighter than the
+  // crest, however white the fog itself is. The swells are the whole of its modelling: tip
+  // a surface this flat by four degrees and the light on it changes by a third.
+  vec3 night = vec3(.075, .095, .125) * (.40 + .60 * sky)
+    + vec3(.52, .60, .74) * pow(moon, 1.9) * 4.4;
+  // and where the layer has piled deeper it gives a little more back, so the sea is not one
+  // tone from end to end
+  night *= .93 + .16 * smoothstep(-.45, .45, s.x - fogBrim(p));
+  // The east is already a light. The glow standing over Śnieżka before the sun is up reaches
+  // the sea first of all, because the sea is the thing nearest to it.
+  float de = max(dot(N, normalize(vec3(-.95, .12, .28))), 0.);
+  vec3 ember = mix(vec3(.30, .42, .66), vec3(1., .49, .25), uPre * uPre);
+  night += ember * (de * de * .40 + smoothstep(26., -46., p.x) * .034) * (.25 + .75 * uPre) * (1. - uDawn);
+  // What a town under the fog does to it: the light never gets out, it fills the layer and
+  // the layer glows. From up here that is a soft warm patch, wider and weaker the deeper the
+  // fog lying over it, and it is the only way of knowing a town is down there at all.
+${SMALL ? `  float tw = texture(uAux, uv).b;` : `  vec2 e = vec2(.0035 + th * .0006, 0.);    // a town's own cell is 66 m: take the edge off it
+  float tw = texture(uAux, uv).b * .34 + (texture(uAux, uv + e).b + texture(uAux, uv - e).b
+    + texture(uAux, uv + e.yx).b + texture(uAux, uv - e.yx).b) * .165;`}
+  night += vec3(1., .47, .17) * tw * tw * (1.4 - .4 * tw) * uLit.z * (.78 / (.7 + th * .30)) * (1. - uDawn * .7);
+  // First light reaches the sea last: it is the lowest thing on the map and the sun has to
+  // clear the range to touch it. When it does, the top goes pink-gold all at once and the
+  // folds stay blue with the sky in them, which is the whole picture from the summit.
+  float alt = smoothstep(7., 22.4, s.x);
+  float sun = clamp((uDawn * 1.6 - .46 * (1. - alt)) / .55, 0., 1.);
+  float dd = max(dot(N, normalize(vec3(-.95, .17, .26))), 0.);
+  vec3 day = vec3(.15, .21, .38) * (.42 + .58 * sky) * (1. - .72 * smoothstep(.04, .28, dd) * sun)
+    + vec3(1., .62, .34) * dd * 4.3 * sun + vec3(1., .38, .18) * pow(dd, 3.) * 2.4 * sun;
+  vec3 col = mix(night, day, uDawn);
+  col /= 1. + col * .55;
+  // the same air between here and the camera as the land is seen through, so the far end of
+  // the sea goes into the horizon haze instead of ending somewhere
+  col = mix(col, mix(vec3(.040, .064, .102), vec3(.188, .153, .136), uDawn),
+    smoothstep(mix(46., 75., uDawn), mix(236., 255., uDawn), d) * (.74 - uDawn * .36));
+  // the edges: the sheet's own, where the drawing runs out, and out in the basin the far
+  // one, where the sea is simply too distant to be anything but air
+  vec2 hw = vec2(uRect.z, uRect.w) * .5;
+  float ed = min(min(hw.x - abs(p.x - uRect.x), p.y - uRect.y + hw.y) / 9.,
+    (uRect.y + hw.y + ${FOG_EXT.toFixed(1)} - p.y) / 13.);
+  a *= smoothstep(0., 1., clamp(ed, 0., 1.));
+  a *= smoothstep(s.x - 1.6, s.x, uReveal);     // it comes in with the land it is lying on
+  o = vec4(col * a, a);
+}`;
+
 function start(bake, gl) {
   if (!gl) throw new Error('no webgl2');
   const { heights } = bake;
@@ -1302,6 +1455,32 @@ function start(bake, gl) {
     .80, .86, .92, .40,   .60, .78, .98, .44,   .94, .82, .74, .58,   // the paths
     .022, .044, .072, .95,                                            // a lake
   ]);
+
+  // ---------------- the sea of fog ----------------
+  // One sheet over the whole map, at the brim of whichever pool it is over. The land cuts
+  // through it wherever it stands higher - that is the depth test doing it, not a mask - and
+  // what is left is the surface of the fog, drawn from above.
+  const fogP = program(IVS, IFS);
+  const UF = uni(fogP, ['uVP', 'uMap', 'uAux', 'uRect', 'uCam', 'uMoon', 'uDawn', 'uPre', 'uT', 'uLit', 'uReveal']);
+  const FG = SMALL ? 80 : 128, FGZ = Math.round(FG * (D + FOG_EXT) / W);
+  const fv = new Float32Array((FG + 1) * (FGZ + 1) * 2);
+  for (let j = 0, k = 0; j <= FGZ; j++) for (let i = 0; i <= FG; i++) {
+    fv[k++] = CX - W / 2 + W * i / FG; fv[k++] = CZ + D / 2 + FOG_EXT - (D + FOG_EXT) * j / FGZ;
+  }
+  const fi = new Uint32Array(FG * FGZ * 6);
+  for (let j = 0, k = 0; j < FGZ; j++) for (let i = 0; i < FG; i++) {
+    const a = j * (FG + 1) + i, b = a + 1, c = a + FG + 1, d = c + 1;
+    fi[k] = a; fi[k + 1] = c; fi[k + 2] = b; fi[k + 3] = b; fi[k + 4] = c; fi[k + 5] = d; k += 6;
+  }
+  const FN = fi.length;
+  const fvao = gl.createVertexArray(); gl.bindVertexArray(fvao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, fv, gl.STATIC_DRAW);
+  {
+    const l = gl.getAttribLocation(fogP, 'aXZ');
+    if (l >= 0) { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 2, gl.FLOAT, false, 0, 0); }
+  }
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, fi, gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
 
   // ---------------- the lights ----------------
   // A shelter is a warm core, the glow the night air puts round it, the pool it throws on
@@ -1518,6 +1697,14 @@ function start(bake, gl) {
   const TAIL = 5, AN = AG.length * TAIL;
   const SN0 = AN + PTS.length;                    // where the smoke starts in the buffer
 
+  // Every light the fog has closed over stops being a light. What is left of a window in the
+  // basin, seen from up here, is the patch of the layer it is lighting from the inside - and
+  // the sheet draws that. So each of them is dimmed to a trace by how deep it lies under the
+  // brim, instead of being left burning on top of the fog like a sticker on the picture.
+  // Jelenia Góra is the exception: that one is not a light but the glow it puts into the sky
+  // over itself, and fog makes more of that, not less.
+  const drown = PTS.map(q => 1 - (q[4] === 5 ? .25 : .94) * drownAt(q[0], q[1], q[2]));
+
   const ap = new Float32Array((SN0 + SMOKE.length) * 6);
   PTS.forEach((p, i) => { const o = (AN + i) * 6; ap[o] = p[0]; ap[o + 1] = p[1]; ap[o + 2] = p[2]; ap[o + 4] = p[4]; });
   for (let i = 0; i < SMOKE.length; i++) ap[(SN0 + i) * 6 + 4] = 10;
@@ -1547,7 +1734,10 @@ function start(bake, gl) {
         let near = 1;   // a walker gives way near a shelter, so its own windows read first
         for (let q = 0; q < MARKN; q++) { const d = Math.hypot(p[0] - LAMPS[q][0], p[2] - LAMPS[q][1]); if (d < 2.2) near = Math.min(near, .25 + .75 * d / 2.2); }
         ap[o] = p[0]; ap[o + 1] = p[1] + bob * (1 - k / TAIL); ap[o + 2] = p[2];
-        ap[o + 3] = (k === 0 ? 1 : .5 * (1 - k / TAIL)) * ends * near * gain;
+        // and a headlamp that walks down into the fog goes with it: a diffused smudge, not a
+        // point. Every path on this map starts above the brim, so this only ever has anything
+        // to do if a walk is added lower down.
+        ap[o + 3] = (k === 0 ? 1 : .5 * (1 - k / TAIL)) * ends * near * gain * (1 - .85 * drownAt(p[0], p[1], p[2]));
       }
     });
   };
@@ -1820,6 +2010,7 @@ function start(bake, gl) {
       // a hut carries its breath in aQ instead, so only its panes and its pool move
       const home = k === 6 || k === 7;
       if (q[5] >= 0) a *= home ? mdim[q[5]] : live[q[5]];
+      a *= drown[i];                     // and what the fog has closed over barely shows
       const ao = (AN + i) * 6;
       ap[ao + 3] = a;
       if (home) ap[ao + 5] = breath[q[5]];
@@ -1916,6 +2107,21 @@ function start(bake, gl) {
     gl.depthMask(false); gl.blendFunc(gl.ONE, gl.ONE); gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1, -160);
     gl.bindVertexArray(dvao); gl.drawElements(gl.TRIANGLES, DN, gl.UNSIGNED_INT, 0);
     gl.disable(gl.POLYGON_OFFSET_FILL); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(true);
+
+    // The sea of fog: over everything that stands in it and under every light, because it is
+    // air. It takes no part in the stencil and writes no depth - what rises out of it has
+    // already been drawn, and what lies under it the depth test has already hidden.
+    gl.useProgram(fogP); gl.uniformMatrix4fv(UF.uVP, false, VP);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(UF.uMap, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, aux); gl.uniform1i(UF.uAux, 1);
+    gl.uniform4f(UF.uRect, CX, CZ, W, D);
+    gl.uniform3f(UF.uCam, eye[0], eye[1], eye[2]);
+    gl.uniform3f(UF.uMoon, MOON[0], MOON[1], MOON[2]);
+    gl.uniform1f(UF.uDawn, dawn); gl.uniform1f(UF.uPre, pre); gl.uniform1f(UF.uT, reduce ? 0 : time);
+    gl.uniform3f(UF.uLit, warmK, coolK, townK); gl.uniform1f(UF.uReveal, reveal);
+    gl.depthMask(false);
+    gl.bindVertexArray(fvao); gl.drawElements(gl.TRIANGLES, FN, gl.UNSIGNED_INT, 0);
+    gl.depthMask(true); gl.bindVertexArray(null);
 
     placeAgents(reduce ? 7 : time, hikeK);
     placeSmoke(reduce ? 11 : time, shLit);
