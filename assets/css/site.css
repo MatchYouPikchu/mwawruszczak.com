@@ -52,8 +52,10 @@ img,canvas,video{display:block;max-width:100%}
 #world.on{opacity:1}
 #labels{position:fixed;left:0;top:0;width:100vw;height:100vh;height:100lvh;z-index:1;pointer-events:none;overflow:hidden}
 .lbl{position:absolute;left:0;top:0;white-space:nowrap;text-align:center;will-change:transform,opacity;opacity:0;transition:opacity .6s ease}
-.lbl b{display:block;font:500 15px/1.2 var(--sans);color:var(--paper);text-shadow:0 1px 14px var(--night),0 0 4px var(--night),0 0 2px var(--night)}
-.lbl i{display:block;font:italic 400 14.5px/1.25 var(--serif);color:var(--ink-2);text-shadow:0 1px 14px var(--night),0 0 4px var(--night),0 0 2px var(--night)}
+/* three tight rings first and the wide one last: a seat under the glyph rather than a haze
+   around it, which is what a label standing on a pale moonlit slope needs */
+.lbl b{display:block;font:500 15px/1.2 var(--sans);color:var(--paper);text-shadow:0 0 2px var(--night),0 0 3px var(--night),0 0 6px var(--night),0 1px 14px var(--night)}
+.lbl i{display:block;font:italic 400 14.5px/1.25 var(--serif);color:var(--ink-2);text-shadow:0 0 2px var(--night),0 0 3px var(--night),0 0 6px var(--night),0 1px 14px var(--night)}
 .lbl.stem.below{display:flex;flex-direction:column;align-items:center}
 .lbl.stem.below::after{order:-1;margin:0 auto 7px;background:linear-gradient(transparent,rgba(236,231,218,.8))}
 .lbl.stem::after{content:"";display:block;width:1px;height:var(--stem,30px);margin:7px auto 0;background:linear-gradient(rgba(236,231,218,.8),transparent)}
@@ -110,7 +112,14 @@ img,canvas,video{display:block;max-width:100%}
 .stop-hero{min-height:100svh;align-items:flex-end;padding-bottom:clamp(40px,9vh,96px)}
 /* the last flight goes the length of the crest, so it gets the room to: a stretch of scroll
    with no words in it, between the third stop and the summit */
-@media (prefers-reduced-motion:no-preference){html.has-world #next{margin-top:70vh}}
+/* The run-up hangs off the bottom of the stop before it rather than the top of this one, and
+   that is not arbitrary: a fragment link scrolls to its target's box, and with 70vh of margin
+   on #next itself that box began seven tenths of a screen above the words. Anybody following
+   a shared https://…/#next - and #next is the one stop worth sending - arrived at an empty
+   dawn sky with "What I think happens next" a screen below the fold. Hung the other way the
+   gap is the same gap and the link lands on the panel. The rail scrolls itself and is
+   unaffected either way. */
+@media (prefers-reduced-motion:no-preference){html.has-world #measure{margin-bottom:70vh}}
 .panel{position:relative;max-width:34rem;padding:6px 0}
 .panel::before{content:"";position:absolute;inset:-28% -30% -28% -40%;z-index:-1;pointer-events:none;background:radial-gradient(closest-side,rgba(16,15,15,.82),rgba(16,15,15,.55) 55%,transparent)}
 .hero-panel{max-width:44rem}
@@ -123,8 +132,15 @@ img,canvas,video{display:block;max-width:100%}
 .btn:hover{border-color:var(--paper)}
 .btn.primary{background:var(--paper);border-color:var(--paper);color:var(--night)}
 .btn.primary:hover{background:#fff}
-.legend{position:absolute;right:var(--edge);bottom:clamp(40px,9vh,96px);margin:0;display:flex;align-items:flex-start;gap:12px;max-width:19rem;padding-top:12px;border-top:1px solid var(--rule-2);font:italic 400 17px/1.35 var(--serif);color:var(--paper);text-shadow:0 1px 12px var(--night),0 0 3px var(--night)}
-.legend small{display:block;margin-top:6px;font:400 13.5px/1.4 var(--sans);font-style:normal;color:var(--ink-2)}
+.legend{position:absolute;right:var(--edge);bottom:clamp(40px,9vh,96px);margin:0;display:flex;align-items:flex-start;gap:12px;max-width:19rem;padding-top:12px;border-top:1px solid var(--rule-2);font:italic 400 17px/1.35 var(--serif);color:var(--paper);text-shadow:0 0 3px var(--night),0 0 6px var(--night),0 1px 12px var(--night)}
+/* The one block of words on the map with no scrim of its own, and on the dive into the first
+   stop it lies on the brightest moonlit flank in the frame - a shadow alone cannot hold
+   13.5px of ink against that. So it gets the panel's own scrim, at about half the weight,
+   hung on the text's span rather than on .legend itself: .legend is a flex row and a
+   pseudo-element on it would come out as a third item and move the mark off the words. */
+.legend>span+span{position:relative}
+.legend>span+span::before{content:"";position:absolute;inset:-20% -15%;z-index:-1;pointer-events:none;background:radial-gradient(closest-side,rgba(8,20,22,.74),rgba(8,20,22,.48) 56%,rgba(8,20,22,.16) 84%,transparent)}
+.legend small{display:block;margin-top:6px;font:400 13.5px/1.4 var(--sans);font-style:normal;color:var(--ink-2);text-shadow:0 0 2px var(--night),0 0 4px var(--night),0 0 7px var(--night),0 1px 12px var(--night)}
 .legend-mark{margin-top:2px}
 .legend-mark{flex:none;width:34px;height:22px;border-radius:50%;background:radial-gradient(closest-side,transparent 0 30%,rgba(127,182,171,.9) 31% 36%,transparent 37% 58%,rgba(127,182,171,.6) 59% 64%,transparent 65% 86%,rgba(127,182,171,.4) 87% 92%,transparent 93%)}
 .quote{margin:22px 0 4px;padding:2px 0 2px 18px;border-left:2px solid var(--flag)}
@@ -140,7 +156,14 @@ img,canvas,video{display:block;max-width:100%}
 @keyframes drip{0%{transform:scaleY(0);transform-origin:top}45%{transform:scaleY(1);transform-origin:top}55%{transform:scaleY(1);transform-origin:bottom}100%{transform:scaleY(0);transform-origin:bottom}}
 .stop h2{font-size:clamp(36px,4.5vw,62px);text-wrap:balance}
 .stop .panel p{color:var(--ink-2);margin-top:18px;font-size:clamp(17px,1.25vw,19px);text-wrap:pretty}
-.count{margin:0 0 14px!important;font:italic 400 17px/1 var(--serif)!important;color:var(--ink-3)!important}
+/* The counter is set in the two faintest inks on the page and it sits in the one corner of
+   the panel where the scrim is thinnest, so over a moonlit slope it was the worst-reading
+   text on the site. It gets its own patch of night, cut round the words rather than round
+   the column: width:max-content is what makes that work, because a closest-side radial on a
+   full-width paragraph box puts its plateau three hundred pixels to the right of the digit.
+   Nothing about the colour, the size or the position moves. */
+.count{position:relative;width:max-content;margin:0 0 14px!important;font:italic 400 17px/1 var(--serif)!important;color:var(--ink-3)!important}
+.count::after{content:"";position:absolute;inset:-12px -22px -12px -16px;z-index:-1;pointer-events:none;background:radial-gradient(closest-side,rgba(8,20,22,.94),rgba(8,20,22,.86) 60%,rgba(8,20,22,.38) 86%,transparent)}
 .count span{color:var(--flag);font-style:normal;font-family:var(--sans);font-weight:600;font-size:15px;margin-right:2px}
 .source{display:inline-block;margin-top:6px;font-size:15px;color:var(--paper);text-decoration:none;border-bottom:1px solid var(--rule-2);padding-bottom:3px}
 .source:hover{border-bottom-color:var(--flag)}
@@ -159,7 +182,9 @@ img,canvas,video{display:block;max-width:100%}
 .route.on{opacity:1;visibility:visible;pointer-events:auto}
 .route a{display:flex;align-items:center;justify-content:flex-end;gap:10px;text-decoration:none;color:var(--ink-3);font-size:12.5px;height:16px}
 .route a::after{content:"";width:7px;height:7px;border-radius:50%;border:1px solid var(--ink-3);transition:background .3s,border-color .3s,transform .3s}
-.route a span{opacity:0;transform:translateX(6px);transition:opacity .25s,transform .25s;white-space:nowrap;text-shadow:0 1px 10px var(--night)}
+/* the focus ring already lays a near-opaque dark seat under this name; hovering gets none,
+   so the shadow has to be the seat - tight rings before the wide one, as the labels do */
+.route a span{opacity:0;transform:translateX(6px);transition:opacity .25s,transform .25s;white-space:nowrap;text-shadow:0 0 3px var(--night),0 0 6px var(--night),0 1px 10px var(--night)}
 .route a:hover span,.route a:focus-visible span{opacity:1;transform:none}
 .route a[aria-current="true"]{color:var(--paper)}
 .route a[aria-current="true"]::after{background:var(--flag);border-color:var(--flag);transform:scale(1.25)}
@@ -167,7 +192,10 @@ img,canvas,video{display:block;max-width:100%}
   .route{top:auto;bottom:max(14px,env(safe-area-inset-bottom));left:50%;right:auto;transform:translateX(-50%);flex-direction:row;gap:16px;padding:8px 12px;border-radius:999px;background:rgba(8,20,22,.72);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
   .route a{height:12px}
   .route a span{display:none}
-  .stop{align-items:flex-end;min-height:105svh;padding-bottom:12vh}
+  /* the rail becomes a pill fixed at the bottom here, and it is a fixed 66px tall whatever
+     the viewport is; 12vh is not, so on a short one - a phone in landscape, or 1440x900 at
+     the 200% zoom WCAG asks about - the dots came to rest on the last line of the panel */
+  .stop{align-items:flex-end;min-height:105svh;padding-bottom:max(12vh,96px)}
   .panel::before{inset:-22% -12% -22% -18%;background:radial-gradient(closest-side,rgba(16,15,15,.95),rgba(16,15,15,.82) 58%,rgba(16,15,15,.3) 86%,transparent)}
   .stop-hero{flex-direction:column;align-items:flex-start;justify-content:flex-end}
   .stop-hero .scroll-hint{display:none}

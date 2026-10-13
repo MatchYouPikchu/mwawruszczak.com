@@ -68,8 +68,13 @@ const sst0 = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))
 // where the top of the layer stands over a point of the map, the same answer the two fog
 // shaders work out for themselves, without the swell on it
 const fogTopAt = (x, z) => FOG_N + (FOG_S - FOG_N) * sst0(2, -7, z + FOG_CZ - FOG_CK * x);
-// how far under the brim a light stands, 0 above it and 1 once the layer has swallowed it
-const drownAt = (x, y, z) => sst0(-.1, 1., fogTopAt(x, z) - y);
+// How far under the brim a light stands, 0 above it and 1 once the layer has swallowed it.
+// Four units is two hundred and thirty metres, which is about the depth of the Jelenia Góra
+// basin from the suburbs on its rim down to the river: read over one unit the whole city
+// switched off together the moment the layer closed, because its floor lies well under the
+// brim and a step function is what that was. Over four it goes out the way a valley does -
+// the roads climbing out last, the streets at the bottom first.
+const drownAt = (x, y, z) => sst0(-.1, 4., fogTopAt(x, z) - y);
 
 let F = null;            // the real features, fetched below
 let WAY = [], LABELS = [], GRAT = [];
@@ -284,12 +289,17 @@ void main(){
   // below it - which is the part that has to be right.
   // the gold is held close round the sun's own quarter and everything else is left to the
   // violet: spread evenly it is one orange wash across the whole dome, which is a filter
-  float ad = towardSun(d.xz), tow = pow(ad, 2.6);
+  float ad = towardSun(d.xz), tow = pow(ad, 3.4);
   vec3 hi = mix(vec3(.040, .058, .122), vec3(.160, .125, .185), tow);   // the zenith, warming towards the sun
   // the horizon: violet in the west, gold in the east. Gold, and not a lamp - the band over
   // the sun is the brightest thing in the sky and it still has to sit under the brightest
-  // thing on the mountain, or the eye goes to an empty corner of the frame and stays there
-  vec3 lo = mix(vec3(.120, .098, .158), vec3(.680, .345, .165), tow);
+  // thing on the mountain, or the eye goes to an empty corner of the frame and stays there.
+  // Which is what it did: on a wide screen the content column stands further right, the sky
+  // beside it is three or four hundred pixels of nothing but this, and the top-left corner
+  // came out brighter and more saturated than anything on the hill. Measured against the lit
+  // rim of Śnieżka rather than guessed at, the gold is cut to about two thirds, and the power
+  // above holds what is left inside the sun's own quarter instead of washing a quadrant.
+  vec3 lo = mix(vec3(.120, .098, .158), vec3(.440, .240, .140), tow);
   vec3 cd = mix(hi, lo, exp(-max(up, 0.) * 3.2));
   // the belt of pink that stands over the band itself, which is the colour everybody
   // remembers from the one morning they were up for it
@@ -380,10 +390,13 @@ float shadeAt(vec3 p, vec3 n, vec3 L, int ns, float st){
   }
   return clamp(res, 0., 1.);
 }
-// the land's and the buildings' own march: full detail, and half of it for ground ten
-// kilometres off, which is half haze anyway
+// The land's and the buildings' own march: full detail, and half of it for ground thirteen
+// kilometres off, which is most of the way into the haze already. Written at 150 units this
+// could never fire: 150 units is thirty-seven kilometres, the sheet is 120 by 90 with the
+// camera standing on it or just off it, and so the far half of the range - the half nobody
+// can see a shadow edge through - was paying all twenty-four steps for nothing.
 float shadeAt(vec3 p, vec3 n, vec3 L, float far){
-  return shadeAt(p, n, L, far > 150. ? SH_STEPS / 2 : SH_STEPS, ${SMALL ? '.56' : '.36'});
+  return shadeAt(p, n, L, far > 55. ? SH_STEPS / 2 : SH_STEPS, ${SMALL ? '.56' : '.36'});
 }`;
 const VS = `#version 300 es
 precision highp float;
@@ -548,8 +561,19 @@ void main(){
   // sees the whole eastern quarter of the sky and that quarter is already salmon, while down
   // in the basin the range itself still holds it out. It is why the crown of a mountain is
   // lilac a long while before any of it is in the sun, and why the valley under it is blue.
-  vec3 shadeD = mix(vec3(.046, .050, .100), mix(vec3(.074, .086, .150), vec3(.112, .082, .136), sun), alt);
-  vec3 dawn = shadeD * (.34 + .78 * sky) + vec3(.036, .042, .062) * fill
+  // Held close to its own grey, though, and that is the difference between a mountain and a
+  // poster of one. Granite out of the sun at this hour is a cool grey with a cast on it, not
+  // a violet: painted at full chroma the shaded half of the range stops being the same rock
+  // as the lit half, and warm and cool read as two colours competing instead of as one
+  // material under two lights. Half this much colour and the lilac is still there - as a
+  // tint on a grey, which is what it is on the hill.
+  vec3 shadeD = mix(vec3(.058, .060, .082), mix(vec3(.096, .100, .126), vec3(.110, .098, .116), sun), alt);
+  // The scree goes into the shaded half too, at a third of the strength it has in the light.
+  // Riding on the sun term alone it vanishes exactly where this frame most needs surface: the
+  // Silesian face of the cone is turned away from the sun for the whole of the last flight,
+  // and without any grain on it the one shape the film has been climbing towards comes out as
+  // a moulded cone. Skylight finds texture as well as sunlight does, only more softly.
+  vec3 dawn = shadeD * (.34 + .78 * sky) * (1. + grain * .10) + vec3(.036, .042, .062) * fill
     + albD * sunCol * (lit * 1.15 + pow(lit, 3.) * .28 + aur * .20);
   vec3 col = mix(night, dawn, uDawn);
   col *= 1. + curv * mix(.58, .42, uDawn);
@@ -1077,7 +1101,12 @@ void main(){
     // Under the eaves the sky is shut out and the roof's own shadow lies along the wall; at
     // the foot of it the weather has been coming off that roof for a hundred years. Two
     // marks, and they are what tell a wall from a flat of paint once the storeys can be seen.
-    alb *= 1. - .34 * (1. - smoothstep(0., 2.4, max(top - v, 0.)));
+    // A band along the eaves line, and it has to be read as a distance from that line rather
+    // than as everything above it: taken the other way, the whole gable triangle - which is
+    // above the eaves and has only the two rakes over it - was being repainted a third darker,
+    // and at the range the last flight keeps a big shelter came out as a black slab with a
+    // grid of lit windows in it rather than as a building with walls.
+    alb *= 1. - .34 * (1. - smoothstep(0., 2.4, abs(v - top)));
     alb *= .84 + .16 * smoothstep(-.2, 2.8, v);
     vec2 ws = winSpec(tone);
     float P = ws.x, hw = ws.y, s = floor(v / 3.), y = v - s * 3., span = hl;
@@ -1330,7 +1359,13 @@ void main(){
   float k = lit * H.w * smoothstep(uNear * 1.95, uNear, dist) * smoothstep(-.03, .14, face)
     * (1. - .62 * smoothstep(.55, .95, face))
     * (1. - .88 * uDawn) * smoothstep(aPos.y - 1.6, aPos.y, uReveal);
-  if (k < .005) { gl_Position = vec4(0., 0., 2., 1.); return; }     // dark: step off the screen
+  // dark: step off the screen. Every varying is written first, even though nothing of this
+  // vertex will be rasterised. Today k is the same for all four corners of a quad - nothing
+  // in it reads aBm, the only attribute that varies across one - so the whole primitive goes
+  // together and leaving them unwritten would be harmless. That is an invariant held by
+  // accident, and the moment k starts reading the beam's own coordinates three corners take
+  // one branch and the fourth the other, and undefined varyings reach the fragment shader.
+  if (k < .005) { vS = vT = vK = 0.; vP = aPos; vCol = vec3(0.); gl_Position = vec4(0., 0., 2., 1.); return; }
   // the wedge turns about the beam, so it keeps its breadth to the camera whichever way the
   // hut is standing; looking straight down the beam it closes up, and the bloom on the pane
   // itself takes over
@@ -1435,9 +1470,18 @@ ${FOGG}
 ${SMALL ? '' : SHADOW}
 void main(){
   vec2 p = vP.xz;
-  vec3 s = fogTop(p, uT);
   vec2 uv = vec2((p.x - uRect.x) / uRect.z + .5, .5 - (p.y - uRect.y) / uRect.w);
-  float th = s.x - texture(uMap, uv).r;         // how deep the layer stands over this ground
+  float g = texture(uMap, uv).r;
+  // Ask the cheap question first. Most of this sheet lies over ground that stands out of the
+  // fog, and from a camera looking down on the range that is most of the screen - every one of
+  // those fragments was working out the swell before the next line threw it away, and the
+  // swell is three noise lookups with their gradients. The height to test against is already
+  // here, carried down from the vertex shader, which worked out the same surface per vertex.
+  // The margin is wider than the finest octave's own half-amplitude, so nothing that belongs
+  // in the sea is cut by asking the interpolated height instead of the exact one.
+  if (vP.y - g <= -.05) discard;
+  vec3 s = fogTop(p, uT);
+  float th = s.x - g;                           // how deep the layer stands over this ground
   if (th <= .004) discard;                      // the land here is out in the clear air
   vec3 V = vP - uCam; float d = length(V); V /= d;
   // What anyone actually sees is the air they are looking through, so the sea thickens
@@ -1536,11 +1580,19 @@ ${SMALL ? `  float tw = texture(uAux, uv).b;` : `  vec2 e = vec2(.0015 + th * .0
     (uRect.y + hw.y + ${FOG_EXT.toFixed(1)} - p.y) / 13.);
   a *= smoothstep(0., 1., clamp(ed, 0., 1.));
   a *= smoothstep(s.x - 1.6, s.x, uReveal);     // it comes in with the land it is lying on
-  // and where the words are it steps back with every other pass in the frame. On a phone the
-  // panel lies over the map, and the brightest thing in the foreground of this map has no
-  // business standing full strength behind a line of type.
-  if (uPanelK > 0.) a *= 1. - uPanelK * .75 * (1. - smoothstep(0., 110.,
-    max(0., max(max(uPanel.x - gl_FragCoord.x, gl_FragCoord.x - uPanel.z), max(uPanel.y - gl_FragCoord.y, gl_FragCoord.y - uPanel.w)))));
+  // And where the words are it steps back, at every width, which the sky already does and for
+  // the same reason: this layer is the brightest thing in the lower half of the frame, it is
+  // exactly where the first stop's panel arrives from the bottom of the screen, and the
+  // counter at the top of that panel is set in the two faintest inks on the page. Over a
+  // night basin that line reads at six to one; over the sea it was reading at three.
+  // The skirt is taken as a length out of the block and feathered over a third of the block's
+  // own height, not squared off at a hundred and ten pixels: a rectangle with corners cut out
+  // of a bank of fog is a thing the eye finds immediately, and there is nothing in cloud that
+  // has corners. Three quarters of the layer comes out under the words, which puts the night
+  // and the town lights back behind them without the sea losing its shore.
+  float fq = max(.34 * (uPanel.w - uPanel.y), 60.);
+  vec2 fo = max(uPanel.xy - gl_FragCoord.xy, gl_FragCoord.xy - uPanel.zw);
+  if (uPanelK > 0.) a *= 1. - uPanelK * .75 * (1. - smoothstep(0., fq, length(max(fo, vec2(0.)))));
   o = vec4(col * a, a);
 }`;
 
@@ -1557,8 +1609,23 @@ function start(bake, gl) {
   let maxH = 0; for (let k = 0; k < heights.length; k++) if (heights[k] > maxH) maxH = heights[k];
 
   const compile = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
-  const program = (vs, fs) => { const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); return p; };
+  // All eight programs are handed to the driver before any of them is asked whether it
+  // linked, because asking is what blocks: a getProgramParameter forces that link to finish
+  // before the next one is even started, and linked one at a time these eight - the land's
+  // fragment shader alone is twenty-six kilobytes of it - cost three hundred milliseconds of
+  // the main thread at boot. Given all of them first the driver can put its own threads on
+  // them. They are made here rather than each beside the geometry that uses it for that
+  // reason and that reason only; the sections below still explain what each one draws.
+  const PROGS = [];
+  const program = (vs, fs) => {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(p); PROGS.push(p); return p;
+  };
   const land = program(VS, FS), dots = program(PVS, PFS), ribs = program(RVS, RFS), sky = program(SVS, SFS);
+  const fogP = program(IVS, IFS);
+  const bld = program(BVS, BFS), dec = program(DVS, DFS), haze = program(AVS, AFS);
+  for (const p of PROGS) if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
   const uni = (p, names) => Object.fromEntries(names.map(n => [n, gl.getUniformLocation(p, n)]));
   const UL = uni(land, ['uMap', 'uAux', 'uVP', 'uRect', 'uTexel', 'uCam', 'uMoon', 'uLamp', 'uLampOn', 'uDawn', 'uReveal', 'uBeat', 'uGain', 'uLit', 'uFine', 'uPanel', 'uPanelK', 'uPre', 'uTop']);
   const UP = uni(dots, ['uVP', 'uScale', 'uDawn', 'uMoonS', 'uDpr', 'uCamP', 'uPass']);
@@ -1679,7 +1746,6 @@ function start(bake, gl) {
   // One sheet over the whole map, at the brim of whichever pool it is over. The land cuts
   // through it wherever it stands higher - that is the depth test doing it, not a mask - and
   // what is left is the surface of the fog, drawn from above.
-  const fogP = program(IVS, IFS);
   const UF = uni(fogP, ['uVP', 'uMap', 'uAux', 'uRect', 'uCam', 'uMoon', 'uDawn', 'uPre', 'uT', 'uLit', 'uReveal', 'uTop', 'uPanel', 'uPanelK']);
   const FG = SMALL ? 80 : 128, FGZ = Math.round(FG * (D + FOG_EXT) / W);
   const fv = new Float32Array((FG + 1) * (FGZ + 1) * 2);
@@ -1846,7 +1912,6 @@ function start(bake, gl) {
     for (const [[i0, j0], [i1, j1], n] of [[[-1, -1], [1, -1], [0, 0, -1]], [[1, -1], [1, 1], [1, 0, 0]], [[1, 1], [-1, 1], [0, 0, 1]], [[-1, 1], [-1, -1], [-1, 0, 0]]])
       face4([C(i0, j0, 19), C(i1, j1, 19), C(i1, j1, 26), C(i0, j0, 26)], n, [0, 1, 1, 0], [0, 0, 1, 1], [.7, 3, OBG, 3], [99, 3, 0]);
   }
-  const bld = program(BVS, BFS), dec = program(DVS, DFS), haze = program(AVS, AFS);
   const UB = uni(bld, ['uVP', 'uMoon', 'uDawn', 'uPre', 'uCam', 'uT', 'uReveal', 'uHut', 'uPanel', 'uPanelK', 'uMap', 'uRect', 'uTop']);
   const UD = uni(dec, ['uVP', 'uHut', 'uT', 'uDawn', 'uReveal', 'uCam', 'uPanel', 'uPanelK']);
   const UA = uni(haze, ['uVP', 'uCam', 'uHut', 'uT', 'uDawn', 'uReveal', 'uNear', 'uPanel', 'uPanelK']);
@@ -1998,8 +2063,11 @@ function start(bake, gl) {
   };
   // Who goes, and when. Each party is a hut and, for every person in it: the moment they step
   // out (0 where the last flight starts, 1 where it lands), how fast they walk in trail units
-  // and how bright their lamp is - about as bright as a hiker's, because it is the same lamp
-  // on the same kind of head. The first party is away long before the camera is near
+  // and how bright their lamp is. A hiker's lamp, because it is the same lamp on the same kind
+  // of head - but no two of them the same, and the spread is wider than it looks it needs to
+  // be: a borrowed one, a good one, one on its second night of battery. Within a tenth of each
+  // other they projected as five identical discs, which is the one thing a group of people
+  // standing on a summit never looks like. The first party is away long before the camera is near
   // enough to see them go; they are the ones on the summit when the camera lands.
   // The other three leave into the frame, as the camera comes down over their roofs.
   // The paces run from 9 to 31, which is as wide as it looks and is the point: the ones who
@@ -2016,10 +2084,10 @@ function start(bake, gl) {
   // The fifth has only just come up and still has theirs on, which is both what happens and
   // what keeps a group on the summit for the frame the page finally rests on.
   const PARTY = [
-    { hut: 16, go: [[.090, 31, 1.10, .854], [.115, 29, 0.96, .880], [.145, 27, 1.06, .906], [.175, 25, 1.00, .932]] },
-    { hut: 15, go: [[.500, 27, 1.08], [.570, 26, 0.94], [.640, 24, 1.02], [.720, 22, 0.92]] },
-    { hut: 16, go: [[.800, 30, 1.04], [.835, 22, 0.95], [.875, 17, 1.00]] },
-    { hut: 17, go: [[.780, 21, 1.12], [.800, 20, 1.00], [.825, 18, 1.06], [.850, 15, 0.95], [.875, 9, 1.02]] },
+    { hut: 16, go: [[.090, 31, 1.24, .854], [.115, 29, 0.84, .880], [.145, 27, 1.08, .906], [.175, 25, 0.94, .932]] },
+    { hut: 15, go: [[.500, 27, 1.16], [.570, 26, 0.82], [.640, 24, 1.04], [.720, 22, 0.90]] },
+    { hut: 16, go: [[.800, 30, 1.06], [.835, 22, 0.86], [.875, 17, 1.20]] },
+    { hut: 17, go: [[.780, 21, 1.22], [.800, 20, 0.92], [.825, 18, 1.10], [.850, 15, 0.84], [.875, 9, 1.14]] },
   ].map((p, i) => {
     const d = doorOf(p.hut), q = joinAt(KARP, d[0], d[1]);
     return { ...p, d, j: [q.x, q.z], s0: q.s, lk: q.d, sc: i * 3 };
@@ -2033,13 +2101,19 @@ function start(bake, gl) {
   const PA0 = AN - PARTY.length * TAIL;            // where the walk starts in that buffer
   const SN0 = AN + PTS.length;                    // where the smoke starts in the buffer
 
-  // Every light the fog has closed over stops being a light. What is left of a window in the
-  // basin, seen from up here, is the patch of the layer it is lighting from the inside - and
-  // the sheet draws that. So each of them is dimmed to a trace by how deep it lies under the
-  // brim, instead of being left burning on top of the fog like a sticker on the picture.
-  // Jelenia Góra is the exception: that one is not a light but the glow it puts into the sky
-  // over itself, and fog makes more of that, not less.
-  const drown = PTS.map(q => 1 - (q[4] === 5 ? .25 : .94) * drownAt(q[0], q[1], q[2]));
+  // Every light the fog has closed over stops being a point and becomes a patch. What is left
+  // of a window in the basin, seen from up here, is the piece of the layer it is lighting from
+  // the inside - so each of them is dimmed by how deep it lies under the brim, instead of
+  // being left burning on top of the fog like a sticker on the picture.
+  // Dimmed, and not put out. An inversion is not a lid: it is forty metres of cloud with a
+  // town under it, and from above a town under cloud still shows - as a bloom with no edges
+  // rather than as a lamp. Cut to a sixteenth it took the whole of Jelenia Góra out of the
+  // first frame anyone sees and left a flat pale field behind the two buttons; a third of
+  // itself is what a drowned lamp actually looks like from up here, and it is what puts the
+  // basin back under the hero.
+  // Jelenia Góra's own entry is the exception: that one is not a light but the glow it puts
+  // into the sky over itself, and fog makes more of that, not less.
+  const drown = PTS.map(q => 1 - (q[4] === 5 ? .25 : .66) * drownAt(q[0], q[1], q[2]));
 
   const ap = new Float32Array((SN0 + SMOKE.length) * 6);
   PTS.forEach((p, i) => { const o = (AN + i) * 6; ap[o] = p[0]; ap[o + 1] = p[1]; ap[o + 2] = p[2]; ap[o + 4] = p[4]; });
@@ -2077,7 +2151,11 @@ function start(bake, gl) {
   // instead of as a few figures standing next to each other.
   // The last of the five is the nearest in to the building, and it is the slot the latecomer
   // falls in - the one person still up there with a lamp on when the page comes to rest.
-  const SCAT = [[.07, .62], [.35, .70], [.63, .30], [.84, .09], [.41, .40]];
+  // Held in a narrow band - a hundred and twenty to a hundred and sixty metres out - because
+  // a group is a knot and not a queue. Spread wider they ran a third of the way down the face
+  // of the cone, all the same distance apart, and what the eye got at the landing was a line
+  // of specks going downhill rather than a few people standing together beside a building.
+  const SCAT = [[.06, .52], [.29, .57], [.52, .25], [.65, .08], [.37, .35]];
   // And which side of the drawn line each of them walks on. Over the last two and a half
   // kilometres the Karpacz route and the crest route the film has just walked are the same
   // path - nought to five metres apart in the survey - so without this the whole walk comes
@@ -2107,7 +2185,10 @@ function start(bake, gl) {
   const placeParty = (g, base, time, story, fade, gain) => {
     for (let k = 0; k < TAIL; k++) {
       const o = (base + k) * 6, m = g.go[k];
-      if (!m) { ap[o + 3] = 0; continue; }
+      // a party of three or four in a five-slot tail: the slots nobody is in are parked well
+      // under the sheet as well as given no alpha, so an empty one is obviously nowhere rather
+      // than sitting at the origin relying on zero times anything being zero
+      if (!m) { ap[o] = ap[o + 2] = 0; ap[o + 1] = -99; ap[o + 3] = 0; continue; }
       const u = (story - m[0]) * m[1];                   // how far they have walked by now
       let x = g.d[0], z = g.d[1], a = 0, step = 0;
       if (u > 0) {
@@ -2202,8 +2283,24 @@ function start(bake, gl) {
   // ---------------- camera ----------------
   const n = WAY.length;
   let cw = 0, ch = 0, VP = null, eye = [0, 0, 0];
+  // How many pixels the canvas draws for each one the screen shows. The screen's own, held at
+  // 1.75 on a desktop and 1.5 on a phone, because past that nobody can see the difference and
+  // the fill is paid for all the same. dprOff is what has been given back to keep the frame
+  // rate up on a machine that cannot manage all of them - a quarter at a time, never below
+  // one, and never handed back: see the watch at the foot of the loop.
+  // And a ceiling on the whole canvas, not just on the ratio: eight and a half million
+  // fragments, which is a 4K screen's worth. The land's cast shadows are a texture march per
+  // fragment and the land fills the frame, so what this costs is very nearly linear in pixel
+  // count - and past 4K the work doubles again for a sharpness nobody is going to find. It
+  // only ever bites on a very large window at a high ratio, where the picture is enormous
+  // anyway: a maximised QHD window at 1.75 comes down to about 1.53 and goes from fifty
+  // frames a second to sixty. Nothing at 1920 wide or below, at any ratio, reaches it.
+  const MAXPX = 8.6e6;
+  let dprOff = 0, curDpr = 1;
   const fit = () => {
-    const w = canvas.clientWidth, h = canvas.clientHeight, dpr = Math.min(devicePixelRatio || 1, w < 760 ? 1.5 : 1.75);
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const dpr = curDpr = Math.max(1, Math.min(devicePixelRatio || 1, w < 760 ? 1.5 : 1.75,
+      Math.sqrt(MAXPX / Math.max(1, w * h))) - dprOff);
     cw = w; ch = h;
     canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -2303,6 +2400,7 @@ function start(bake, gl) {
   };
 
   let cur = STILL !== null ? STILL : 0, last = performance.now(), t0 = last, visible = true, rafId = 0, revealStart = 0, dirty = true;
+  let ftFrom = 0, ftSum = 0, ftN = 0;      // the open frame-time window: when it started, and what is in it
   const P2 = [0, 0, 0];
   const mdim = new Float32Array(LAMPS.length).fill(1);
   const live = new Float32Array(LAMPS.length).fill(1);   // breathing × giving way to a label
@@ -2367,6 +2465,10 @@ function start(bake, gl) {
     // whole frame stood behind the smallest type in it. So the sky takes the rectangle
     // wherever there are words, desktop as well as phone; the drawing underneath still only
     // goes quiet where the words actually cover it, which is on a phone.
+    // The sea of fog is the second exception, for the same reason arrived at from below: it
+    // is the brightest thing in the lower half of the frame, and the lower half of the frame
+    // is where the first stop's panel comes up from. It was only stepping back on a phone,
+    // where everything does, so on a desktop the panel arrived onto a flat pale wall.
     let panelK = 0, skyK = 0;
     if (rects.length) {
       let l = 1e9, r = -1e9, t = 1e9, b = -1e9;
@@ -2374,13 +2476,13 @@ function start(bake, gl) {
       const sc = canvas.height / ch;
       const px = [(l - 14) * sc, (ch - b - 18) * sc, (r + 14) * sc, (ch - t + 18) * sc];
       gl.useProgram(sky); gl.uniform4f(US.uPanel, px[0], px[1], px[2], px[3]);
+      gl.useProgram(fogP); gl.uniform4f(UF.uPanel, px[0], px[1], px[2], px[3]);
       skyK = 1;
       if (portrait()) {
         gl.useProgram(land); gl.uniform4f(UL.uPanel, px[0], px[1], px[2], px[3]);
         gl.useProgram(ribs); gl.uniform4f(UR.uPanel, px[0], px[1], px[2], px[3]);
         gl.useProgram(bld); gl.uniform4f(UB.uPanel, px[0], px[1], px[2], px[3]);
         gl.useProgram(dec); gl.uniform4f(UD.uPanel, px[0], px[1], px[2], px[3]);
-        gl.useProgram(fogP); gl.uniform4f(UF.uPanel, px[0], px[1], px[2], px[3]);
         gl.useProgram(haze); gl.uniform4f(UA.uPanel, px[0], px[1], px[2], px[3]);
         panelK = 1;
       }
@@ -2541,7 +2643,10 @@ function start(bake, gl) {
     gl.uniform3f(UF.uMoon, MOON[0], MOON[1], MOON[2]);
     gl.uniform1f(UF.uDawn, dawn); gl.uniform1f(UF.uPre, pre); gl.uniform1f(UF.uT, reduce ? 0 : time);
     gl.uniform3f(UF.uLit, warmK, coolK, townK); gl.uniform1f(UF.uReveal, reveal);
-    gl.uniform1f(UF.uTop, maxH + .6); gl.uniform1f(UF.uPanelK, panelK);
+    // the ceiling the shadow march gives up at. A phone does not march on the sea of fog at
+    // all, so it has no ceiling to be told about and the shader never declares one.
+    if (!SMALL) gl.uniform1f(UF.uTop, maxH + .6);
+    gl.uniform1f(UF.uPanelK, skyK);
     gl.depthMask(false);
     gl.bindVertexArray(fvao); gl.drawElements(gl.TRIANGLES, FN, gl.UNSIGNED_INT, 0);
     gl.depthMask(true); gl.bindVertexArray(null);
@@ -2660,6 +2765,36 @@ function start(bake, gl) {
     const here = Math.min(n - 1, Math.max(0, Math.round(p)));
     routeLinks.forEach((a, i) => a.setAttribute('aria-current', String(i === here)));
     const settling = Math.abs(lampTarget - lampOn) > .01 || (MW.beat || 0) > .01 || !(reduce || reveal > maxH + 2);
+
+    // ---------------- keeping up ----------------
+    // This was built on a machine that draws it in two milliseconds. Not every machine will:
+    // the land's cast shadows are a march per fragment, and a laptop on integrated graphics
+    // with the window pulled out across a 4K screen is asked for eight million of them sixty
+    // times a second. Where that cannot be done the honest answer is to draw fewer pixels,
+    // not to drop frames - at this distance a quarter off the pixel ratio costs a little
+    // softness in the contour lines and nothing else anyone would name, while a stuttering
+    // scroll is the first thing everybody names.
+    // So once the land is up - a second and a half for the reveal, and another second and a
+    // half to let the page settle, because a window that caught the last of the boot would
+    // step a fast machine down for nothing - the frame time is watched two and a half seconds
+    // at a time; if the average over a whole window stays above twenty-two milliseconds - a
+    // frame and a half at sixty hertz, which is where a scroll stops feeling joined to the
+    // hand - the canvas gives up a quarter and the next window is measured at the new size.
+    // It only ever goes down, and never below one. A ratio that walked back up when a window
+    // happened to come in cheap would spend the whole page breathing between two resolutions,
+    // and that is more noticeable than either end of it. Reduced motion is left out - there is
+    // nothing animating there to be smooth - and so is a frozen frame, which is a still at
+    // whatever rate it is redrawn.
+    if (!reduce && STILL === null && curDpr > 1 && revealStart && now - revealStart > 3000) {
+      if (!ftFrom) ftFrom = now;                       // the window opens on the first frame that counts
+      else if (now - ftFrom > 2500) {
+        // a dozen frames is enough of a window to mean something, and the bar has to be this
+        // low or the machines that need this most never clear it: at thirty frames in two and
+        // a half seconds the page is already struggling, which is the whole point of the watch
+        if (ftN > 12 && ftSum / ftN > 22) { dprOff += .25; fit(); }
+        ftFrom = 0; ftSum = 0; ftN = 0;                // and the next one opens fresh, after the resize
+      } else if (dt < .09) { ftSum += dt * 1000; ftN++; }   // a frame off the clamp was the tab being away
+    }
     if (visible && !document.hidden && (!reduce || wasDirty || settling)) rafId = requestAnimationFrame(loop);
   };
   const kick = () => { if (!rafId && visible && !document.hidden) { last = performance.now(); rafId = requestAnimationFrame(loop); } };
