@@ -1103,13 +1103,19 @@ void main(){
       // rather than white: a hut burns bulbs, and a white pane reads as a strip light.
       em += tint * pane * lit * bri * (1. - .8 * bars) * 2.0 * detail;
       em += vec3(1., .88, .74) * pane * lit * bri * (1. - .55 * bars) * .42 * detail;
-      // and the bloom round it: the light lying on the render just outside the frame, and
-      // over a wider radius the haze in front of the glass taking a little of it. The radius
-      // is held to a few pixels at least, because past a kilometre the spread is the
-      // camera's and not the wall's - which is the whole of what a burning window looks
-      // like from the valley, and what stops one reading as a square of orange paint.
-      float br = max(.42, px * 3.2);
-      em += tint * lit * bri * (exp(-max(d, 0.) / br) * .60 + exp(-max(d, 0.) / (br * 3.4)) * .26) * (1. - pane) * detail;
+      // And the bloom round it: the light lying on the render just outside the frame, and
+      // over a wider radius the haze in front of the glass taking a little of it. Both ends
+      // of the radius are held. At least a few pixels, because past a kilometre the spread
+      // of a light belongs to the camera and not to the wall, and that spread is the whole
+      // of what a burning window is from the valley. At most half a metre, because this
+      // glow is worked out inside one column of windows and knows nothing of its
+      // neighbours: let it reach as far as the next column and the cell fills evenly and
+      // cuts dead against the dark one beside it, which is a glowing tile and not a window.
+      // And it is taken to nothing at the edges of its own cell for that same reason - a
+      // bloom that ends at a straight line was never light on a wall.
+      float br = clamp(px * 3.2, .18, .55);
+      float fade = (1. - smoothstep(hw, P * .5, abs(cx.y))) * (1. - smoothstep(ch, 1.45, abs(y - cy)));
+      em += tint * lit * bri * (exp(-max(d, 0.) / br) * .60 + exp(-max(d, 0.) / (br * 2.4)) * .26) * fade * (1. - pane) * detail;
       alb = mix(alb, vec3(.025, .032, .045), pane * (1. - lit) * detail);
       gloss = pane * (1. - lit) * detail;
     }
@@ -1148,9 +1154,14 @@ void main(){
         // on the slates that a window in a wall gets, or the roofs read as dark all night.
         vec3 tint = winTint(fh, face + 20., lv, cx.x);
         float bri = .45 + .55 * hh(vec4(cx.x + 2., lv, fh, face + 31.));
-        float br = max(.38, px * 3.2);
+        // the same bloom as on a wall, held between the same two bounds - and here the
+        // taper matters more than anywhere, because a wall is cut into storeys and a roof
+        // slope is not: v runs unbroken from the eaves to the ridge, so a glow left free to
+        // grow along it paints a stripe up the whole slates and stops at the column's edge.
+        float br = clamp(px * 3.2, .16, .50);
+        float fade = (1. - smoothstep(.48, 2.3, abs(cx.y))) * (1. - smoothstep(.62, 2.1, abs(y)));
         em += (tint * 1.8 + vec3(1., .88, .74) * .36) * pane * lit * bri * detail;
-        em += tint * lit * bri * (exp(-max(d, 0.) / br) * .52 + exp(-max(d, 0.) / (br * 3.4)) * .20) * (1. - pane) * detail;
+        em += tint * lit * bri * (exp(-max(d, 0.) / br) * .52 + exp(-max(d, 0.) / (br * 2.4)) * .20) * fade * (1. - pane) * detail;
         alb = mix(alb, vec3(.03, .035, .05), pane * (1. - lit) * detail);
         em += vec3(1., .68, .38) * .06 * H.x * (1. - .8 * H.y) * (1. - detail);
       }
@@ -1793,6 +1804,11 @@ function start(bake, gl) {
         const nx = (long ? B[0] : A[0]) * sg, nz = (long ? B[1] : A[1]) * sg;
         for (let c = 0; c < cols; c++) {
           const uc = (c + .5) * Pw - cols * Pw * .5;
+          // The door takes up the middle of one of these columns on the front of the main
+          // wing, and where there is a door there is no window: the wall puts out whatever
+          // was burning there. A wedge of air standing out of a shut door, on top of the one
+          // the lamp above it already throws, is a shaft of light leaving nothing.
+          if (wi === 0 && f === 0 && Math.abs(uc + ha * .3) <= .9) continue;
           const p = long ? P(uc, sg * hb, yw) : P(sg * ha, uc, yw);
           beam(out(p, nx, nz), nx, nz, 4.6 * m, .74 * m, hut, wi * 4 + f, c, lv);
         }
