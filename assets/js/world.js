@@ -837,6 +837,12 @@ void main(){ vK = aK; vA = aA; vQ = aQ;
   // stands on, so the hillside never cuts into the building and the building never floats.
   vec3 P = aPos;
   if (k >= 6 && k <= 9) P += normalize(uCamP - aPos) * .55;
+  // A headlamp can carry the same nudge in aQ. The walk of the finale is drawn at head
+  // height on the buildings' own scale - a metre or two off the ground, level with the door
+  // it comes out of - and a sprite that low dips in and out of the hillside it is walking
+  // over. It is given a fifth of what a hut takes, because it is a twentieth of a hut's
+  // size: any more and a lamp stands in front of ground it belongs behind.
+  else if (k == 0 && aQ > 0.) P += normalize(uCamP - aPos) * aQ;
   vec4 c = uVP * vec4(P, 1.); gl_Position = c;
   vNear = smoothstep(NF[k], NN[k], max(c.w, .1));
   // A shelter's halo opens out as the camera closes in - far more than perspective alone
@@ -1951,7 +1957,80 @@ function start(bake, gl) {
     ['ascent', 12, .82], ['ascent', 25, 1.08], ['ascent', 38, .88], ['ridge', 3, 1.35],
     ['ridge', 31, 1.10], ['ridge', 60, 1.28]]
     .map(([k, off, sp], i) => ({ path: TP[k], off, sp, ph: i * 1.7 }));
+
+  // ---------------- the sunrise walk ----------------
+  // An hour before it happens the huts under Śnieżka empty. A party goes out of the door in
+  // the dark for the summit, to be standing on it when the sun is. Three of those huts are on
+  // the Karpacz trail in this sheet - Samotnia on its tarn, Strzecha Akademicka a few minutes
+  // above it, Dom Śląski on the saddle at the foot of the cone - and that trail ends on the
+  // top, which is where the last flight ends. So the finale is their walk, scroll for scroll:
+  // each party leaves at its own moment and goes at its own pace, and by the time the camera
+  // lands there is a thread of headlamps on the zig-zags and a few people already up there
+  // with nothing to do but wait. All of it is read off how far down the page you are and
+  // never off the clock, so one frame of it is the same picture every time it is drawn.
+  // Luční bouda and the Czech huts are left out of it: the survey has no path from them to
+  // this trail, and a party walking across open hillside would be a lie about the ground.
+  // Nothing of this is drawn on the buildings themselves. An open door, the light behind it
+  // and the wedge it throws on the ground were all built and all cut: at every camera this
+  // page uses, the nearest of these huts is five kilometres off and a doorway is a fifth of
+  // a pixel wide, and not one of them could be seen on the screen. The people can.
+  const KARP = TP.karpacz;
+  // where a trail passes nearest a point, as an arc length: where somebody stepping out of a
+  // door joins it, which is not quite the waypoint the survey hangs the hut's name on
+  const joinAt = (path, x, z) => {
+    const { P, acc } = path;
+    let b = { s: 0, d: 1e9, x, z };
+    for (let i = 0; i < P.length - 1; i++) {
+      const ax = P[i][0], az = P[i][1], bx = P[i + 1][0] - ax, bz = P[i + 1][1] - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * bx + (z - az) * bz) / (bx * bx + bz * bz || 1e-9)));
+      const qx = ax + bx * t, qz = az + bz * t, d = Math.hypot(x - qx, z - qz);
+      if (d < b.d) b = { s: acc[i] + (acc[i + 1] - acc[i]) * t, d: Math.max(.04, d), x: qx, z: qz };
+    }
+    return b;
+  };
+  // the front door of a hut's main wing, on the land: three tenths of the way along the
+  // front wall of wing 0 from its middle, a stride outside it - exactly where the building
+  // shader draws the door and the decal puts its lamp, so the two cannot drift apart
+  const doorOf = i => {
+    const w = wingsOf(SH[i])[0] || { x: SH[i].x, z: SH[i].z, A: [1, 0], B: [0, 1], ha: 0, hb: 0, m: 0 };
+    return [w.x + (w.A[0] * -w.ha * .3 + w.B[0] * (w.hb + 1.5)) * w.m,
+            w.z + (w.A[1] * -w.ha * .3 + w.B[1] * (w.hb + 1.5)) * w.m];
+  };
+  // Who goes, and when. Each party is a hut and, for every person in it: the moment they step
+  // out (0 where the last flight starts, 1 where it lands), how fast they walk in trail units
+  // and how bright their lamp is - about as bright as a hiker's, because it is the same lamp
+  // on the same kind of head. The first party is away long before the camera is near
+  // enough to see them go; they are the ones on the summit when the camera lands.
+  // The other three leave into the frame, as the camera comes down over their roofs.
+  // The paces run from 9 to 31, which is as wide as it looks and is the point: the ones who
+  // come from the far huts are the ones who got up in the dark and move, and the last out of
+  // Dom Śląski are on the steepest ground on the hill with four hundred metres of cone in
+  // front of them. That spread is what strings them out instead of marching them up in step.
+  // A fourth number, on the rows the sun gets to, is how far down the page that person puts
+  // their lamp out - and it is read off the scroll, not off the camera, so all of this
+  // happens after the frame has come to rest. Only the summit carries one. By the landing
+  // five of them are standing up there and it is the one piece of ground in the frame the
+  // sun has; everybody else is on the Silesian face of the cone with the cone itself between
+  // them and the sun, and keeps their lamp. The four who have been up there longest switch
+  // off in the order they arrived, one at a time, over about two hundred pixels of scroll.
+  // The fifth has only just come up and still has theirs on, which is both what happens and
+  // what keeps a group on the summit for the frame the page finally rests on.
+  const PARTY = [
+    { hut: 16, go: [[.090, 31, 1.10, .854], [.115, 29, 0.96, .880], [.145, 27, 1.06, .906], [.175, 25, 1.00, .932]] },
+    { hut: 15, go: [[.500, 27, 1.08], [.570, 26, 0.94], [.640, 24, 1.02], [.720, 22, 0.92]] },
+    { hut: 16, go: [[.800, 30, 1.04], [.835, 22, 0.95], [.875, 17, 1.00]] },
+    { hut: 17, go: [[.780, 21, 1.12], [.800, 20, 1.00], [.825, 18, 1.06], [.850, 15, 0.95], [.875, 9, 1.02]] },
+  ].map((p, i) => {
+    const d = doorOf(p.hut), q = joinAt(KARP, d[0], d[1]);
+    return { ...p, d, j: [q.x, q.z], s0: q.s, lk: q.d, sc: i * 3 };
+  });
+  // the table names its three huts by their place in the survey; if that ever moves, a party
+  // walks out of the wrong building and nothing else in here would say so
+  for (const [i, nm] of [[15, 'Samotnia'], [16, 'Strzecha Akademicka'], [17, 'Dom Slaski']])
+    if (SH[i]?.n !== nm) console.warn('the sunrise walk expected ' + nm + ' at shelter ' + i);
+  for (const p of PARTY) AG.push(p);               // they ride in the walkers' own buffer
   const TAIL = 5, AN = AG.length * TAIL;
+  const PA0 = AN - PARTY.length * TAIL;            // where the walk starts in that buffer
   const SN0 = AN + PTS.length;                    // where the smoke starts in the buffer
 
   // Every light the fog has closed over stops being a light. What is left of a window in the
@@ -1980,8 +2059,87 @@ function start(bake, gl) {
     const x = P[k][0] + (P[k + 1][0] - P[k][0]) * t, z = P[k][1] + (P[k + 1][1] - P[k][1]) * t;
     return [x, heightAt(x, z) + .3, z];
   };
-  const placeAgents = (time, gain) => {
+  // One party of the sunrise walk, put on the hill by the scroll alone. Each of them is at
+  // the door until their moment, walks the few steps from it onto the trail, and then goes
+  // up. The ones that get to the top stop there and stand about on the plateau beside the
+  // observatory, and their lamps go off one at a time as the light arrives.
+  // Their lamp is a point of kind 0 like every other walker's - the same size, the same
+  // colour, taking the same warmth at dawn - with the nudge towards the camera in aQ, so
+  // nothing else in the buffer or in the draw ranges has to know about them.
+  // Where they stand once they are up. The summit of Śnieżka is a hundred metres of stony
+  // plateau with the observatory on it, and people wait on the side they came up, which is
+  // the north-west and is also the side the camera lands on. Two things set these offsets.
+  // They are all further out than the lowest of the three discs, which overhangs its drum by
+  // eighteen building-metres: stand anyone nearer in and they are not a group on the ground
+  // beside the building, they are lights mounted on it. And they are fanned across the line
+  // the camera looks along rather than strung out down it - put five people on one bearing
+  // from here and they project as a vertical line of dots running away down the hillside
+  // instead of as a few figures standing next to each other.
+  // The last of the five is the nearest in to the building, and it is the slot the latecomer
+  // falls in - the one person still up there with a lamp on when the page comes to rest.
+  const SCAT = [[.07, .62], [.35, .70], [.63, .30], [.84, .09], [.41, .40]];
+  // And which side of the drawn line each of them walks on. Over the last two and a half
+  // kilometres the Karpacz route and the crest route the film has just walked are the same
+  // path - nought to five metres apart in the survey - so without this the whole walk comes
+  // up the cone threaded on the brightest line in the frame, which is the one thing a row of
+  // headlamps must never look like. It is not a cheat: the survey samples this route every
+  // hundred and forty metres and the zig-zags on the cone are far shorter than that, so the
+  // line drawn here is a smoothing of a path that really does wander twenty or thirty metres
+  // either side of it. Giving each of them their own distance off it is nearer the ground.
+  const SIDE = [.082, -.056, .030, -.104, .064];
+  const LIFT = .055;              // head height, on the scale the buildings are drawn at
+  // the nudge along the line of sight, as the huts take and for the same reason, scaled to
+  // the size of the thing: enough that a lamp is not swallowed by the slope it is walking
+  // over, not enough to put one in front of a wall it is standing behind
+  const NUDGE = .10;
+  for (let i = PA0; i < AN; i++) ap[i * 6 + 5] = NUDGE;   // it never changes: written once
+  // A point of the Karpacz trail, a given distance off to one side of it. The same arc
+  // search along() does, without its heightAt - the walk works its own ground out once, at
+  // the end, because it may have stepped off the line by then anyway.
+  const atKarp = (s, side) => {
+    const { P, acc, L } = KARP;
+    s = Math.max(0, Math.min(L, s));
+    let k = 0; while (k < acc.length - 2 && acc[k + 1] < s) k++;
+    const t = (s - acc[k]) / Math.max(1e-6, acc[k + 1] - acc[k]);
+    const dx = P[k + 1][0] - P[k][0], dz = P[k + 1][1] - P[k][1], dl = Math.hypot(dx, dz) || 1e-9;
+    return [P[k][0] + dx * t - dz / dl * side, P[k][1] + dz * t + dx / dl * side];
+  };
+  const placeParty = (g, base, time, story, fade, gain) => {
+    for (let k = 0; k < TAIL; k++) {
+      const o = (base + k) * 6, m = g.go[k];
+      if (!m) { ap[o + 3] = 0; continue; }
+      const u = (story - m[0]) * m[1];                   // how far they have walked by now
+      let x = g.d[0], z = g.d[1], a = 0, step = 0;
+      if (u > 0) {
+        const sc = (k + g.sc) % SCAT.length;
+        if (u < g.lk) { const t = u / g.lk; x += (g.j[0] - x) * t; z += (g.j[1] - z) * t; step = 1; }
+        else {
+          const s = g.s0 + u - g.lk, L = KARP.L, q = atKarp(s, SIDE[sc]);
+          // coming up to the top they leave the line and spread out over the plateau; once
+          // they are on it they have stopped, and somebody standing still does not bob
+          const arr = c01((s - L) / 1.2 + 1);
+          x = q[0] + SCAT[sc][0] * arr; z = q[1] + SCAT[sc][1] * arr;
+          step = 1 - arr;
+        }
+        // Out of a lit doorway into the dark. Nothing of them is drawn until they are out on
+        // the trail and clear of the outline of the hut they have left: a lamp inside it is a
+        // light lying on a lit wall, which is what the stencil over the buildings is for.
+        a = m[2] * c01((u - g.lk) / .45) * gain;
+        // and out again, one at a time, when the day reaches them
+        if (m[3] !== undefined) a *= 1 - sst(m[3], m[3] + .038, fade);
+        // A lamp seven kilometres off never sits still: the head it is strapped to turns, and
+        // that much air between puts a slow scintillation on it. Two rates, so no two of them
+        // are ever in step and the line reads as people rather than as a string of bulbs.
+        if (!reduce) a *= .84 + .10 * Math.sin(time * 2.1 + m[0] * 53.) + .06 * Math.sin(time * 3.7 + m[0] * 121.);
+      }
+      ap[o] = x; ap[o + 2] = z;
+      ap[o + 1] = heightAt(x, z) + LIFT + (reduce ? 0 : Math.sin(time * 4.1 + m[0] * 31.) * .02 * step);
+      ap[o + 3] = a;
+    }
+  };
+  const placeAgents = (time, gain, story, fade, walkK) => {
     AG.forEach((g, i) => {
+      if (g.go) return placeParty(g, i * TAIL, time, story, fade, walkK);   // the sunrise walk
       const L = g.path.L, s0 = (time * g.sp + g.off) % (L + 6);
       // a headlamp rides on somebody's forehead, so it rises and falls with the stride
       const bob = reduce ? 0 : Math.sin(time * 4.3 + g.ph) * .035;
@@ -2183,6 +2341,10 @@ function start(bake, gl) {
     // how far along the crest the walk has come: nowhere before the last flight, the whole
     // trail to the summit once it lands
     const walk = cur <= n - 2 ? 0 : (c.arc === undefined ? TP.ridge.L : c.arc);
+    // and how far the sunrise walk has got: where every party on the trail below the summit
+    // stands is read off this alone, so the whole of it plays as the page is scrolled and a
+    // still of it is the same picture every time
+    const story = c01(cur - (n - 2));
     // The hour before. The sky in the east comes up a stop at a time, so the sun at the last
     // stop finishes something that started on the first screen instead of arriving from
     // nowhere. It is full by the fourth stop, where the dawn itself takes the picture over.
@@ -2401,7 +2563,15 @@ function start(bake, gl) {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(true); gl.bindVertexArray(null);
     }
 
-    placeAgents(reduce ? 7 : time, hikeK);
+    // The hikers on the open crest and in the valleys give most of their lamp up to the
+    // morning; the walk gives up less of it, because the ground it is on is the Silesian
+    // face of the cone and the cone is between that ground and the sun for the whole of
+    // this. Where the walk stands on the hill is read off the camera, which stops moving a
+    // little before the scroll does; when a lamp goes out is read off the scroll itself, so
+    // the last of them go dark while the frame is already still and the words are being
+    // read, which is when it actually happens.
+    placeAgents(reduce ? 7 : time, hikeK, story, c01(p - (n - 2)),
+      (1 - dawn * .42) * (reduce ? 1 : sst(.45, 1.5, lu)));
     placeSmoke(reduce ? 11 : time, shLit);
     gl.bindBuffer(gl.ARRAY_BUFFER, abuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, ap);
     gl.useProgram(dots); gl.uniformMatrix4fv(UP.uVP, false, VP); gl.uniform1f(UP.uDawn, dawn);
@@ -2420,6 +2590,10 @@ function start(bake, gl) {
     gl.drawArrays(gl.POINTS, AN, PTS.length);
     gl.blendFunc(gl.ONE, gl.ONE); gl.uniform1i(UP.uPass, 1);
     gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.NOTEQUAL, 1, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+    // every light, the sunrise walk with them: a headlamp a few metres from a hut is behind
+    // that hut's wall as often as it is beside it, and the stencil that keeps the halos off
+    // the walls is also what keeps a lamp from being drawn on one. Somebody is hidden for
+    // their first strides out of a door, which is what you would see from a ridge anyway.
     gl.drawArrays(gl.POINTS, 0, SN0);
     gl.disable(gl.STENCIL_TEST);
     gl.drawArrays(gl.POINTS, SN0, SMOKE.length);     // smoke can drift in front of a roof
