@@ -747,19 +747,36 @@ void main(){
     // looking down into it there is nothing to see; it is only where the sky skims off the
     // surface that a tarn lights up at all, and that is what makes it water and not a plate
     c = mix(c, vec3(.125, .185, .250) * rip, clamp(.10 + fres * .86, 0., 1.));
-    c += vec3(1., .45, .16) * vGlow * vGlow * uWarm * (.34 + fres * .9);
-    // Samotnia stands on the shore of Mały Staw, and on a still night its windows lie out
-    // across the water towards whoever is looking: not a wash over the surface but a column
-    // that broadens as it comes, cut into bars by the ripple, and never quite still.
+    // The warmth a lit shelter above the shore lays on the water nearest it. The glow in the
+    // air round a hut is a hundred metres across, so unlike the hut itself - whose image in a
+    // tarn this high above it falls on the bank and not in the water - it is given back over
+    // a wide enough spread of angles to reach the water anyone is actually looking at. Taken
+    // from the shelter itself rather than from the field baked at the corners of a lake:
+    // a polygon of eight corners carries a gradient as eight flat facets.
+    float toHut = length(vP.xz - uShore.xy);
+    c += vec3(1., .45, .16) * exp(-toHut * 2.7) * uShore.z * uWarm * (.26 + fres * 1.15);
+    // Samotnia stands above the eastern shore of Mały Staw, and on a still night the tarn
+    // gives its windows back: not a wash over the surface but a column that broadens as it
+    // comes, and never quite still. Three of them, at their own widths and their own
+    // tremors - a reflection in moving water is never one shape but a handful of pieces of
+    // one, which is most of the difference between water and varnish.
     vec2 toC = uShoreD.xy;
     vec2 rel = vP.xz - uShore.xy;
     float along = dot(rel, toC), across = dot(rel, vec2(-toC.y, toC.x));
-    float wid = .026 + .135 * max(along, 0.);
+    float lane = 0.;
     // it has to die out well before the far shore, or the column ends where the lake's
     // outline ends and the whole thing reads as an orange wedge cut to fit a polygon
-    float lane = exp(-(across * across) / (wid * wid)) * exp(-max(along, 0.) * 2.45) * smoothstep(-.10, .03, along);
-    float trem = .20 + .80 * abs(sin(along * 34. - uT * 2.1 + sin(across * 15. + uT * .8)));
-    c += vec3(1., .52, .24) * lane * trem * uShore.z * uWarm * (1.15 + fres * 2.1);
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i) - 1.;
+      float off = fi * (.020 + .060 * max(along, 0.));
+      float wid = (.020 + .085 * max(along, 0.)) * (1. + .22 * fi);
+      float dx = across - off;
+      float str = exp(-(dx * dx) / (wid * wid)) * exp(-max(along, 0.) * (2.3 + .55 * fi * fi));
+      float trem = .16 + .84 * abs(sin(along * (28. + 9. * fi) - uT * (1.9 + .45 * fi) + sin(across * 15. + uT * .8)));
+      lane += str * trem * (1. - .26 * abs(fi));
+    }
+    lane *= smoothstep(-.10, .03, along);
+    c += vec3(1., .52, .24) * lane * uShore.z * uWarm * (1.05 + fres * 2.);
     a *= 1. - vGlow * .2;
   } else {
     float wk = 0., hd = 0.;
@@ -804,7 +821,7 @@ const float MN[11] = float[11](0., 0., 0., 7., 0., 0., 15., 11., 13., 14., 3.);
 // The halo is held to about twice the building it stands round. Wider than that and the
 // hut reads as a hat on a ball - a small dark glyph marooned in the middle of a lantern -
 // which is the one thing a schronisko never looks like from the valley.
-const float MX[11] = float[11](6.5, 13., 8., 17., 8., 54., 70., 52., 42., 46., 26.);
+const float MX[11] = float[11](6.5, 13., 8., 17., 8., 54., 70., 52., 42., 46., 34.);
 // The range over which a mark stops being only a light. Far off, a shelter is what you
 // really see from the basin: a window burning, with the air glowing round it. Closer in,
 // the roof comes up as a shape in front of its own glow - never a lit model, just the
@@ -825,7 +842,9 @@ void main(){ vK = aK; vA = aA; vQ = aQ;
   // A shelter's halo opens out as the camera closes in - far more than perspective alone
   // would give it. That is honest: the glow in the air round a hut is hundreds of metres
   // wide and only resolves into air when you are near enough for it to have any size.
-  float sz = SZ[k] * (k == 6 || k == 7 ? 1. + .80 * vNear : k == 10 ? .50 + 1.25 * aQ : 1.);
+  // a puff leaves the flue tight and opens out fast, then keeps opening slowly: the shape of
+  // the plume is in this curve, not in the puffs
+  float sz = SZ[k] * (k == 6 || k == 7 ? 1. + .80 * vNear : k == 10 ? .30 + 1.55 * pow(aQ, .62) : 1.);
   float px = clamp(sz * uScale.x / max(c.w, .1), MN[k] * uScale.y, MX[k] * uScale.y * uScale.z);
   // The relay keeps a size in the world, with its foot on the rim, so it stands on the land
   // and not over it. The limits keep it legible far off and from turning into a model close in.
@@ -857,13 +876,17 @@ void main(){
   // the solid pass draws only the huts themselves; everything else is light
   if (uPass == 0 && k != 9) discard;
   if (k == 10) {
-    // Chimney smoke. One soft puff, raked cool by the moon on the side the moon is on and
-    // warm underneath from the window it has just left: the only thing in this picture lit
-    // by both lights at once, which is the whole reason to draw it.
+    // Woodsmoke. One soft puff of a plume that is drawn out of a dozen of them: raked silver
+    // by the moon on the side the moon is on, lit warm from underneath by the windows and the
+    // door lamp it has just left, and at dawn pink - smoke is the first thing up here the sun
+    // reaches, a long time before the ground under it. The only thing in this picture lit by
+    // both lights at once, which is the whole reason to draw it.
     float s = 1. - smoothstep(0., .5, r); s *= s * s;
-    float side = .34 + .66 * clamp(.5 + .5 * dot(q / max(r, 1e-4), uMoonS), 0., 1.);
-    float under = smoothstep(-.06, .44, q.y) * (1. - vQ) * (1. - vQ);
-    vec3 c = warmth(vec3(.58, .63, .72) * side * s + vec3(1., .52, .22) * under * s * .90) * vNear * edge;
+    float side = .26 + .74 * clamp(.5 + .5 * dot(q / max(r, 1e-4), uMoonS), 0., 1.);
+    float under = smoothstep(-.12, .46, q.y) * (1. - vQ) * (1. - vQ);
+    vec3 c = vec3(.52, .58, .70) * side * s + vec3(1., .47, .18) * under * s * 1.05;
+    c = mix(c, vec3(dot(c, vec3(.34))) * vec3(1.46, .98, .88), uDawn * .92);
+    c *= vNear * edge;
     o = vec4(c * vA, max(c.r, max(c.g, c.b)) * vA); return;
   }
   if (k < 6) {
@@ -965,8 +988,10 @@ function wingsOf(s) {
 // Every shelter is drawn as its own building: the real footprint from the survey, cut into
 // wings, each with its storeys and its roof. What the walls and the light they throw on the
 // ground have to agree on is which windows are burning, so that is written once, here.
-const WIN = `
-${DAWNAIR}
+// The windows themselves are on their own, because a vertex shader needs them too: the
+// shafts of window light in the air are turned towards the camera in theirs, and have to
+// know which windows are burning. Nothing in here may read gl_FragCoord.
+const WINC = `
 float hh(vec4 p){ p = fract(p * vec4(.1031, .1030, .0973, .1099)); p += dot(p, p.wzxy + 33.33); return fract((p.x + p.y) * p.z + p.w); }
 // how a wall of this finish is windowed: the spacing, and half a pane's width
 vec2 winSpec(float tone){ return tone > 1.5 ? vec2(3.1, .85) : tone > .5 ? vec2(2.3, .55) : vec2(2.7, .60); }
@@ -992,13 +1017,20 @@ float winLit(float hut, float face, float s, float c, vec4 H, float lv, float t)
 vec3 winTint(float hut, float face, float s, float c){
   float h = hh(vec4(face + 2., s + 9., c, hut));
   return h < .16 ? vec3(1., .46, .20) * .62 : mix(vec3(1., .62, .31), vec3(1., .80, .54), h);
-}
-// the fog and the dawn of the land are airOf/fogOf, up in DAWNAIR, so a building sits in
-// the same air as its own hillside - and the wall knows which way it is being looked at, so
-// a hut a mile off fades into the lit air on the sun's side and into the cold away from it
+}`;
+// and the other half: how far the words lying over the map quieten what is drawn under
+// them. It reads gl_FragCoord, so it belongs to the fragment shaders alone - which is the
+// whole reason the two halves are separate constants.
+const QUIET = `
 float quietOf(vec4 P, float K){
   return K <= 0. ? 0. : K * (1. - smoothstep(0., 110., max(0., max(max(P.x - gl_FragCoord.x, gl_FragCoord.x - P.z), max(P.y - gl_FragCoord.y, gl_FragCoord.y - P.w)))));
 }`;
+// What a wall of a shelter needs, whole: its windows, the words over it, and the air of the
+// land. The fog and the dawn are airOf/fogOf, up in DAWNAIR, so a building sits in the same
+// air as its own hillside - and the wall knows which way it is being looked at, so a hut a
+// mile off fades into the lit air on the sun's side and into the cold away from it.
+const WIN = `
+${DAWNAIR}${WINC}${QUIET}`;
 const BVS = `#version 300 es
 precision highp float;
 in vec3 aPos; in vec3 aNrm; in vec2 aUv; in vec4 aInf; in vec3 aFt;
@@ -1036,6 +1068,11 @@ void main(){
     else alb = vec3(.40, .41, .43) * (.90 + .10 * mix(1., smoothstep(0., .05 + px, abs(fract(v / 3.) - .5) * 3.), smoothstep(.12, .04, px)));
     // under the ground floor, where the slope falls away: the stone the house stands on
     if (v < 0.) alb = vec3(.25, .24, .23) * (.80 + .20 * hh(vec4(floor(u / 1.2 + floor(v / .55) * .5), floor(v / .55), fh, 1.)));
+    // Under the eaves the sky is shut out and the roof's own shadow lies along the wall; at
+    // the foot of it the weather has been coming off that roof for a hundred years. Two
+    // marks, and they are what tell a wall from a flat of paint once the storeys can be seen.
+    alb *= 1. - .34 * (1. - smoothstep(0., 2.4, max(top - v, 0.)));
+    alb *= .84 + .16 * smoothstep(-.2, 2.8, v);
     vec2 ws = winSpec(tone);
     float P = ws.x, hw = ws.y, s = floor(v / 3.), y = v - s * 3., span = hl;
     float cy = 1.65, ch = .72;                            // a pane's centre and half-height
@@ -1048,18 +1085,31 @@ void main(){
       row = span > 1.3;
     }
     vec2 cx = winCol(u, max(span, 0.), P);
-    float detail = smoothstep(2.2, 4.5, P / px);          // a window has to be wide enough to draw
+    // a window has to be wide enough to draw, and it has to arrive gently: a hard threshold
+    // on a pane two pixels across is a window that flickers every time the camera moves
+    float detail = smoothstep(1.9, 5.2, P / px);
     if (row && cx.x >= 0.) {
-      float d = max(abs(cx.y) - hw, abs(y - cy) - ch), aa = px * .8;
+      float d = max(abs(cx.y) - hw, abs(y - cy) - ch), aa = px * .9 + .015;
       float pane = 1. - smoothstep(-aa, aa, d);
       float lit = winLit(fh, face, s, cx.x, H, lv, uT);
       vec3 tint = winTint(fh, face, s, cx.x);
       // the glazing bars, where there is room to see them
       float bars = min(1., smoothstep(.05 + px, .025, abs(cx.y)) + smoothstep(.05 + px, .025, abs(y - cy - .22))) * smoothstep(.10, .04, px);
-      float bri = s < .5 ? 1.2 * H.z : 1.;               // the room with the stove in it breathes
-      em += tint * pane * lit * bri * (1. - .8 * bars) * 1.5 * detail;
-      // and the light it puts on its own wall round it
-      em += tint * lit * exp(-max(d, 0.) / .5) * (1. - pane) * .10 * detail;
+      // no two rooms are lit the same: a reading lamp in one, the ceiling light in the next
+      float bri = (.40 + .60 * hh(vec4(cx.x + 5., s + 1., fh, face + 13.))) * (s < .5 ? 1.2 * H.z : 1.);
+      // A lit window is the brightest thing on this mountain and has to be drawn like one:
+      // the room's own colour, and inside it a heart that goes past the top of the scale -
+      // what a light does to anything looking at it from out in the cold. Kept warm-white
+      // rather than white: a hut burns bulbs, and a white pane reads as a strip light.
+      em += tint * pane * lit * bri * (1. - .8 * bars) * 2.0 * detail;
+      em += vec3(1., .88, .74) * pane * lit * bri * (1. - .55 * bars) * .42 * detail;
+      // and the bloom round it: the light lying on the render just outside the frame, and
+      // over a wider radius the haze in front of the glass taking a little of it. The radius
+      // is held to a few pixels at least, because past a kilometre the spread is the
+      // camera's and not the wall's - which is the whole of what a burning window looks
+      // like from the valley, and what stops one reading as a square of orange paint.
+      float br = max(.42, px * 3.2);
+      em += tint * lit * bri * (exp(-max(d, 0.) / br) * .60 + exp(-max(d, 0.) / (br * 3.4)) * .26) * (1. - pane) * detail;
       alb = mix(alb, vec3(.025, .032, .045), pane * (1. - lit) * detail);
       gloss = pane * (1. - lit) * detail;
     }
@@ -1089,11 +1139,18 @@ void main(){
       vec2 cx = winCol(u, ra - 1., 4.6);
       float y = v - hl * .38;
       if (cx.x >= 0.) {
-        float d = max(abs(cx.y) - .48, abs(y) - .62), aa = px * .8;
+        float d = max(abs(cx.y) - .48, abs(y) - .62), aa = px * .9 + .015;
         float pane = 1. - smoothstep(-aa, aa, d);
         float lit = step(hh(vec4(fh, face + 20., cx.x, 3.)), .42) * winLit(fh, face + 20., lv, cx.x, H, lv + 1., uT);
-        float detail = smoothstep(2.2, 4.5, 4.6 / px);
-        em += winTint(fh, face + 20., lv, cx.x) * pane * lit * 1.35 * detail;
+        float detail = smoothstep(1.9, 5.2, 4.6 / px);
+        // From the basin the camera looks down on the roofs more than at the walls, so this
+        // is the light a hut is mostly seen by: it gets the white heart and the bloom lying
+        // on the slates that a window in a wall gets, or the roofs read as dark all night.
+        vec3 tint = winTint(fh, face + 20., lv, cx.x);
+        float bri = .45 + .55 * hh(vec4(cx.x + 2., lv, fh, face + 31.));
+        float br = max(.38, px * 3.2);
+        em += (tint * 1.8 + vec3(1., .88, .74) * .36) * pane * lit * bri * detail;
+        em += tint * lit * bri * (exp(-max(d, 0.) / br) * .52 + exp(-max(d, 0.) / (br * 3.4)) * .20) * (1. - pane) * detail;
         alb = mix(alb, vec3(.03, .035, .05), pane * (1. - lit) * detail);
         em += vec3(1., .68, .38) * .06 * H.x * (1. - .8 * H.y) * (1. - detail);
       }
@@ -1224,6 +1281,63 @@ void main(){
   float k = smoothstep(vP.y - 1.6, vP.y, uReveal) * H.w * (1. - .78 * uDawn) * (1. - fog) * (1. - quietOf(uPanel, uPanelK) * .75);
   vec3 c = vec3(1., .56, .26) * L * .62 * k;
   o = vec4(c / (1. + c * .6), 0.);
+}`;
+// The light in the air outside the glass. An hour before dawn the air up here is full of ice
+// dust, and a lit window does not stop at its own pane: it lays a short wedge of lit haze on
+// the air in front of the wall. One wedge for each window on the ground floor, turned about
+// its own axis to face the camera - so from the side it is a shaft leaving the wall, and
+// head-on it is the glow standing round the pane, which is the same thing seen end on. It is
+// held short and faint, and it only exists when the camera is close enough for a hut to have
+// any size at all: a shaft of light visible from a kilometre off is a searchlight, not a window.
+const AVS = `#version 300 es
+precision highp float;
+in vec3 aPos; in vec2 aNrm; in vec4 aBm; in vec4 aWin;
+uniform mat4 uVP; uniform vec3 uCam; uniform vec4 uHut[24]; uniform float uT;
+uniform float uDawn; uniform float uReveal; uniform float uNear;
+out float vS; out float vT; out vec3 vP; flat out vec3 vCol; flat out float vK;
+${WINC}
+void main(){
+  vec4 H = uHut[int(aWin.x + .5)];
+  vec3 N = vec3(aNrm.x, 0., aNrm.y), D = uCam - aPos;
+  float dist = length(D);
+  vec3 V = D / max(dist, 1e-4);
+  // the lamp over the door is marked with a column below zero: it is lit whenever anyone is
+  // in, which is what a lamp over a door is for
+  float door = step(aWin.z, -.5);
+  float lit = mix(winLit(aWin.x, aWin.y, 0., aWin.z, H, aWin.w, uT), H.x * (1. - .85 * H.y), door);
+  // There is nothing to see from behind a wall, and nothing to see from far enough away. And
+  // looking straight down the beam it gives way to the bloom on the pane, which is the same
+  // light drawn better: a wedge seen end on is a foreshortened rectangle, and a row of them
+  // is a row of identical streaks, which is a thing no window has ever done.
+  float face = dot(N, V);
+  float k = lit * H.w * smoothstep(uNear * 1.95, uNear, dist) * smoothstep(-.03, .14, face)
+    * (1. - .62 * smoothstep(.55, .95, face))
+    * (1. - .88 * uDawn) * smoothstep(aPos.y - 1.6, aPos.y, uReveal);
+  if (k < .005) { gl_Position = vec4(0., 0., 2., 1.); return; }     // dark: step off the screen
+  // the wedge turns about the beam, so it keeps its breadth to the camera whichever way the
+  // hut is standing; looking straight down the beam it closes up, and the bloom on the pane
+  // itself takes over
+  vec3 w = cross(N, V);
+  float wl = length(w);
+  w = wl > 1e-3 ? w / wl : vec3(-N.z, 0., N.x);
+  vS = aBm.y; vT = aBm.x; vK = k;
+  vCol = mix(winTint(aWin.x, aWin.y, 0., aWin.z), vec3(1., .78, .50), door);
+  vP = aPos + N * (vT * aBm.z) + w * (vS * (aBm.w + aBm.z * vT * .32));
+  gl_Position = uVP * vec4(vP, 1.);
+}`;
+const AFS = `#version 300 es
+precision highp float;
+in float vS; in float vT; in vec3 vP; flat in vec3 vCol; flat in float vK;
+uniform float uDawn; uniform vec3 uCam; uniform vec4 uPanel; uniform float uPanelK;
+out vec4 o;
+${DAWNAIR}${QUIET}
+void main(){
+  float across = 1. - vS * vS;                       // soft at the edges, as a cone of haze is
+  float along = exp(-vT * 2.8) * (1. - vT * vT);     // and spent a few metres out from the glass
+  float d = length(vP - uCam);
+  vec3 c = vCol * (across * across * along * vK * .72 * (1. - fogOf(d, uDawn))
+    * (1. - quietOf(uPanel, uPanelK) * .75));
+  o = vec4(c, 0.);
 }`;
 
 // ---------------- the fog, as a surface ----------------
@@ -1583,13 +1697,23 @@ function start(bake, gl) {
   // Each one is its real building: the survey's footprint cut into wings, turned the way it
   // stands, on the terrace the bake levelled for it. Storeys of windows, a roof, a chimney,
   // and a plinth of stone where the slope still falls away under it. Its windows throw their
-  // light on the ground outside (DV), and its smoke leaves from its chimney (CHIM).
-  const BV = [], BI = [], DV = [], DI = [], CHIM = [], HUTC = [];
+  // light on the ground outside (DV) and into the air in front of the walls (HV), and its
+  // smoke leaves from its chimney (CHIM).
+  const BV = [], BI = [], DV = [], DI = [], CHIM = [], HUTC = [], HV = [], HI = [];
   const OBG = SH.length + 1;                          // the observatory's light group, after the relay's
   const vtx = (p, n, u, v, inf, ft) => { BV.push(p[0], p[1], p[2], n[0], n[1], n[2], u, v, inf[0], inf[1], inf[2], inf[3], ft[0], ft[1], ft[2]); return BV.length / 15 - 1; };
   const quadI = (a, b, c, d) => BI.push(a, b, c, a, c, d);
   const face4 = (P, n, U, W, inf, ft) => quadI(...P.map((p, k) => vtx(p, n, U[k], W[k], inf, ft)));
   const unit = v => { const l = Math.hypot(...v) || 1; return v.map(x => x / l); };
+  // one wedge of lit air for each window on the ground floor: where it leaves the wall, which
+  // way it faces, how far it reaches, and which window it belongs to, so the shader can ask
+  // whether that one is burning
+  const beam = (p, nx, nz, len, hw, hut, face, col, lv) => {
+    const b0 = HV.length / 13;
+    for (const [t, sd] of [[0, -1], [0, 1], [1, 1], [1, -1]])
+      HV.push(p[0], p[1], p[2], nx, nz, t, sd, len, hw, hut, face, col, lv);
+    HI.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+  };
   SH.forEach((s, hut) => {
     const b = s.b;
     if (!b) { HUTC.push([s.x, heightAt(s.x, s.z) + .2, s.z]); CHIM.push(null); return; }
@@ -1658,6 +1782,24 @@ function start(bake, gl) {
         DV.push(p[0], heightAt(p[0], p[2]) + .02, p[2], al, ac, ha, hb, hut, lv, wi * 4, tone);
       }
       for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { const a = base + j * (G + 1) + i; DI.push(a, a + 1, a + G + 2, a, a + G + 2, a + G + 1); }
+      // and the air in front of each of its ground-floor windows. The spacing has to be the
+      // one the wall is drawn with (winSpec), or a beam stands in front of a blank wall.
+      const Pw = tone > 1.5 ? 3.1 : tone > .5 ? 2.3 : 2.7;
+      const yw = floorY + 1.65 * m;                     // the middle of a ground-floor pane
+      const out = (p, nx, nz) => [p[0] + nx * .14 * m, p[1], p[2] + nz * .14 * m];
+      for (let f = 0; f < 4; f++) {
+        const long = f < 2, sg = f & 1 ? -1 : 1, half = long ? ha : hb;
+        const cols = Math.max(1, Math.floor((2 * half - 2.2) / Pw));
+        const nx = (long ? B[0] : A[0]) * sg, nz = (long ? B[1] : A[1]) * sg;
+        for (let c = 0; c < cols; c++) {
+          const uc = (c + .5) * Pw - cols * Pw * .5;
+          const p = long ? P(uc, sg * hb, yw) : P(sg * ha, uc, yw);
+          beam(out(p, nx, nz), nx, nz, 4.6 * m, .74 * m, hut, wi * 4 + f, c, lv);
+        }
+      }
+      // and the lamp over the door, which is the one light down at the height of the ground:
+      // a wider, shorter wash of air, marked with a column of -1 so the shader knows it
+      if (wi === 0) beam(out(P(-ha * .3, hb, floorY + 2.75 * m), B[0], B[1]), B[0], B[1], 3.6 * m, 1.15 * m, hut, 0, -1, lv);
     });
     HUTC.push(light); CHIM.push(chim);
   });
@@ -1682,9 +1824,10 @@ function start(bake, gl) {
     for (const [[i0, j0], [i1, j1], n] of [[[-1, -1], [1, -1], [0, 0, -1]], [[1, -1], [1, 1], [1, 0, 0]], [[1, 1], [-1, 1], [0, 0, 1]], [[-1, 1], [-1, -1], [-1, 0, 0]]])
       face4([C(i0, j0, 19), C(i1, j1, 19), C(i1, j1, 26), C(i0, j0, 26)], n, [0, 1, 1, 0], [0, 0, 1, 1], [.7, 3, OBG, 3], [99, 3, 0]);
   }
-  const bld = program(BVS, BFS), dec = program(DVS, DFS);
+  const bld = program(BVS, BFS), dec = program(DVS, DFS), haze = program(AVS, AFS);
   const UB = uni(bld, ['uVP', 'uMoon', 'uDawn', 'uPre', 'uCam', 'uT', 'uReveal', 'uHut', 'uPanel', 'uPanelK', 'uMap', 'uRect', 'uTop']);
   const UD = uni(dec, ['uVP', 'uHut', 'uT', 'uDawn', 'uReveal', 'uCam', 'uPanel', 'uPanelK']);
+  const UA = uni(haze, ['uVP', 'uCam', 'uHut', 'uT', 'uDawn', 'uReveal', 'uNear', 'uPanel', 'uPanelK']);
   const mkMesh = (prog, V, I, stride, attrs) => {
     const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(V), gl.STATIC_DRAW);
@@ -1695,6 +1838,10 @@ function start(bake, gl) {
   };
   const bvao = mkMesh(bld, BV, BI, 60, [['aPos', 3, 0], ['aNrm', 3, 12], ['aUv', 2, 24], ['aInf', 4, 32], ['aFt', 3, 48]]), BN = BI.length;
   const dvao = mkMesh(dec, DV, DI, 44, [['aPos', 3, 0], ['aL', 2, 12], ['aW', 4, 20], ['aF', 2, 36]]), DN = DI.length;
+  const hvao = mkMesh(haze, HV, HI, 52, [['aPos', 3, 0], ['aNrm', 2, 12], ['aBm', 4, 20], ['aWin', 4, 36]]), HN = HI.length;
+  // how close the camera has to be before there is air to light: a wedge of haze visible from
+  // a kilometre off is a searchlight. A phone draws fewer pixels, so it starts later.
+  const HNEAR = SMALL ? 23 : 30;
   const HU = new Float32Array(24 * 4);              // each hut: woken, put out by the day, breath, dimmed under words
   // the order the huts light up in, as the land comes up under them: lowest first
   const byH = SH.map((s, i) => i).sort((a, b) => heightAt(SH[a].x, SH[a].z) - heightAt(SH[b].x, SH[b].z));
@@ -1744,25 +1891,31 @@ function start(bake, gl) {
     .1 + (2 - Math.abs(k - 2)) * .035, 5, -1, .1 + k * .08, .30, .10]);
 
   // ---------------- the smoke ----------------
-  // A few soft puffs leaving each chimney, drifting with a light air off the Czech side and
-  // thinning as they climb. They are faded out beyond about six kilometres: at hero distance
+  // A plume of woodsmoke leaving each chimney, leaning with a light air off the Czech side
+  // and thinning as it climbs. It is faded out beyond about six kilometres: at hero distance
   // a thread of woodsmoke is not a thing you can see, and pretending otherwise is kitsch.
-  // Enough of them, close enough together, that they join into a thread. Four puffs spread
-  // over a whole climb is a string of beads, which is what it looked like; eight small ones
-  // overlapping is smoke. They are drawn smaller to pay for the extra count, and each one
-  // thins as it rises instead of swelling and fading like a ring of breath.
+  // It is drawn out of soft puffs, and the whole trick is that there are enough of them,
+  // close enough together, to stop being puffs: eight over a whole climb is a string of
+  // beads, which is what it looked like, and eighteen overlapping is a column of smoke. They
+  // are drawn fainter to pay for the extra count, they open out fast as they leave the flue
+  // and then slowly, and one wave of wind crosses the whole column instead of each of them
+  // wandering off on its own. A phone draws half as many and a little heavier.
   const SMOKE = [];
   SH.forEach((s, i) => {
-    const n = s.p ? 8 : 3;
+    const n = (s.p ? 18 : 9) >> (SMALL ? 1 : 0);
     const ch = CHIM[i] || [s.x, heightAt(s.x, s.z) + .5, s.z];     // the top of its chimney
     for (let k = 0; k < n; k++) SMOKE.push({
       g: i, x: ch[0], y: ch[1], z: ch[2],
-      ph: k / n + ((i * 37 + k * 11) % 23) / 460,
-      rate: (s.p ? .135 : .115) * (.88 + ((i * 13 + k * 5) % 7) / 26),
+      // Evenly spaced along the plume, and all of one chimney's puffs share a phase for the
+      // wind, so what crosses them is one wave travelling up one column of smoke instead of
+      // each puff wandering off on its own - which is what made them read as a string of beads.
+      ph: k / n + ((i * 37 + k * 11) % 23) / 2600,
+      sd: (i * 2.7) % 6.2832,
+      rate: (s.p ? .125 : .108) * (.94 + ((i * 13) % 7) / 48),
       rise: s.p ? 1.30 : .92,
-      dx: -.95 + (((i * 5 + k * 3) % 9) - 4) * .09,
-      dz: .62 + (((i * 11 + k * 7) % 9) - 4) * .075,
-      a: s.p ? .54 : .34,
+      dx: -.95 + (((i * 5 + k * 3) % 9) - 4) * .05,
+      dz: .62 + (((i * 11 + k * 7) % 9) - 4) * .042,
+      a: (s.p ? .46 : .32) * (SMALL ? 1.6 : 1),
     });
   });
   // Samotnia is the one hut on this map that stands on a shore. Mały Staw is forty metres
@@ -1831,14 +1984,18 @@ function start(bake, gl) {
   const placeSmoke = (time, lit) => {
     for (let i = 0; i < SMOKE.length; i++) {
       const s = SMOKE[i], age = (time * s.rate + s.ph) % 1, o = (SN0 + i) * 6;
-      const w = Math.sin(age * 4.1 + s.ph * 6.2832) * .06 * age;
-      ap[o] = s.x + s.dx * age * age + w;
+      // one wave running up the column and a shorter one over it: the whole plume leans and
+      // recovers together, the way a thread of woodsmoke does in a light air
+      const sway = (Math.sin(age * 3.1 - time * .55 + s.sd) * .055
+        + Math.sin(age * 6.7 - time * .93 + s.sd * 1.7) * .021) * age;
+      ap[o] = s.x + s.dx * age * age + sway;
       ap[o + 1] = s.y + s.rise * age * (1.35 - .35 * age);
-      ap[o + 2] = s.z + s.dz * age * age + w * .6;
-      // up out of the flue at full strength and thinning the whole way, which is what a
-      // chimney does; a puff that fades in from nothing starts in mid-air
+      ap[o + 2] = s.z + s.dz * age * age + sway * .6;
+      // Out of the flue tight and nearly solid, thickening over the first few metres as the
+      // hot gas slows and spreads, and thinning the whole rest of the way. A puff that fades
+      // in from nothing starts in mid-air; a puff that only fades out is a smoke ring.
       const up = 1 - age;
-      ap[o + 3] = s.a * up * up * Math.sqrt(up) * Math.min(1, age * 11) * lit[s.g];
+      ap[o + 3] = s.a * up * up * Math.min(1, age * 14) * (.72 + .28 * Math.min(1, age * 5)) * lit[s.g];
       ap[o + 5] = age;
     }
   };
@@ -2046,6 +2203,7 @@ function start(bake, gl) {
         gl.useProgram(bld); gl.uniform4f(UB.uPanel, px[0], px[1], px[2], px[3]);
         gl.useProgram(dec); gl.uniform4f(UD.uPanel, px[0], px[1], px[2], px[3]);
         gl.useProgram(fogP); gl.uniform4f(UF.uPanel, px[0], px[1], px[2], px[3]);
+        gl.useProgram(haze); gl.uniform4f(UA.uPanel, px[0], px[1], px[2], px[3]);
         panelK = 1;
       }
     }
@@ -2209,6 +2367,23 @@ function start(bake, gl) {
     gl.depthMask(false);
     gl.bindVertexArray(fvao); gl.drawElements(gl.TRIANGLES, FN, gl.UNSIGNED_INT, 0);
     gl.depthMask(true); gl.bindVertexArray(null);
+
+    // And then the air in front of the windows, close in: added over the walls as well,
+    // because the haze stands between the camera and them - and after the sea of fog,
+    // because the two are air at opposite ends of the frame. The sea lies kilometres down
+    // the valley and is a wash over everything behind it; this is the ice dust in the yard
+    // of the hut the camera is standing next to, and it is in front. It keeps the land's
+    // depth, so a shaft is cut off by the shoulder of the hill the hut stands on, like
+    // anything else in the air.
+    if (HN) {
+      gl.useProgram(haze); gl.uniformMatrix4fv(UA.uVP, false, VP);
+      gl.uniform3f(UA.uCam, eye[0], eye[1], eye[2]); gl.uniform4fv(UA.uHut, HU);
+      gl.uniform1f(UA.uT, reduce ? 0 : time); gl.uniform1f(UA.uDawn, dawn);
+      gl.uniform1f(UA.uReveal, reveal); gl.uniform1f(UA.uNear, HNEAR); gl.uniform1f(UA.uPanelK, panelK);
+      gl.depthMask(false); gl.blendFunc(gl.ONE, gl.ONE);
+      gl.bindVertexArray(hvao); gl.drawElements(gl.TRIANGLES, HN, gl.UNSIGNED_INT, 0);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(true); gl.bindVertexArray(null);
+    }
 
     placeAgents(reduce ? 7 : time, hikeK);
     placeSmoke(reduce ? 11 : time, shLit);
