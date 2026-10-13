@@ -14,7 +14,11 @@
   --ok:#7fd6b0;
   --wait:#e9c27c;
   --wrong:#ff5a5f;
-  --dawn:#ffb27a;
+  /* how far the dawn has come, 0 to 1: the scroll writes it and .dawnsky is the only thing
+     that reads it. A number, because an opacity given a colour is invalid at computed-value
+     time and falls back to 1 - which put a full sunrise over the page for the moment before
+     the first frame was drawn, on a page whose subject is the hour before dawn. */
+  --dawn:0;
   --serif:"Poltawski Nowy",Georgia,"Times New Roman",serif;
   --sans:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -50,7 +54,37 @@ img,canvas,video{display:block;max-width:100%}
    so the handover is one sky coming up and not two crossing over. */
 .dawnsky{position:fixed;left:0;top:0;width:100vw;height:100vh;height:100lvh;z-index:0;pointer-events:none;opacity:var(--dawn,0);background:radial-gradient(124% 82% at 16% -14%,rgba(255,152,88,.72),rgba(196,92,84,.34) 36%,rgba(84,48,74,.16) 64%,transparent 84%),linear-gradient(180deg,rgba(46,32,52,.58),rgba(14,14,28,.2) 58%,transparent)}
 #world.on{opacity:1}
-#labels{position:fixed;left:0;top:0;width:100vw;height:100vh;height:100lvh;z-index:1;pointer-events:none;overflow:hidden}
+/* At the handover the canvas already holds the frame the opening film is showing, so it is
+   switched on rather than faded in: a second and a half of the two crossing over would be a
+   dissolve between two copies of the same picture, which is exactly the softness the film was
+   made to avoid. The class is taken off again on the next frame. */
+#world.cut{transition:none}
+#labels{position:fixed;left:0;top:0;width:100vw;height:100vh;height:100lvh;z-index:1;pointer-events:none;overflow:hidden;transition:opacity .7s ease}
+
+/* ---------- the opening film ---------- */
+/* The same box as the canvas and the same place in the stack: over the map, under every word
+   on the page, which is readable from the first frame. It is in the document for eight seconds
+   on a first visit and at no other time, and it is built in JS, so a visitor who will not see
+   it never asks the server for it. `object-fit: cover` crops it the way the map frames the
+   same view; the night behind it is the page's own, for the moment at the end when the
+   decoder has been handed back and the layer is already on its way out. It is never seen on
+   the way in: the layer is not put over the page until it has a picture to show. */
+.film{position:fixed;left:0;top:0;width:100vw;height:100vh;height:100lvh;z-index:1;object-fit:cover;background:var(--night);pointer-events:none;transition:opacity .65s ease}
+.film.off{opacity:0}
+/* The film is a photograph, and a photograph of this valley an hour before dawn is a much
+   brighter thing than the map it becomes: the survey light goes right across the frame, and
+   the lamps of Jelenia Góra under the fog are the brightest things on the page. Every word of
+   the hero stands in the lower two thirds - the name at two fifths down, the scroll hint at
+   the very bottom - and measured against the film at its brightest the small type there came
+   out at a tenth of the contrast it has over the map. So while the film is on screen the air
+   thickens downwards, over the part of the frame that holds the words and the least of the
+   picture; the crest, the sky and Śnieżka are left alone. It goes BEFORE the film does, over
+   the last six tenths of a second of it: by seven seconds the film has become the map, so the
+   air can clear while there is still a film under it and the handover then lands on the map
+   exactly as the map looks. Cleared after the cut instead, it was a curtain lifting off the
+   page a second and a half after the page had arrived - the whole thing arriving twice. */
+.film-scrim{position:fixed;left:0;top:0;width:100vw;height:100vh;height:100lvh;z-index:1;pointer-events:none;transition:opacity 1.5s ease;background:linear-gradient(180deg,rgba(8,20,22,0) 26%,rgba(8,20,22,.20) 46%,rgba(8,20,22,.48) 66%,rgba(8,20,22,.66) 82%,rgba(8,20,22,.74) 100%)}
+.film-scrim.off{opacity:0}
 .lbl{position:absolute;left:0;top:0;white-space:nowrap;text-align:center;will-change:transform,opacity;opacity:0;transition:opacity .6s ease}
 /* three tight rings first and the wide one last: a seat under the glyph rather than a haze
    around it, which is what a label standing on a pale moonlit slope needs */

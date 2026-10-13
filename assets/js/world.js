@@ -1596,6 +1596,311 @@ ${SMALL ? `  float tw = texture(uAux, uv).b;` : `  vec2 e = vec2(.0015 + th * .0
   o = vec4(col * a, a);
 }`;
 
+// ---------------- the opening film ----------------
+// Eight seconds, on a visitor's first look and no other. It opens on a photograph of this
+// exact view an hour before dawn, a thin arc of survey light goes up the range, contour lines
+// draw themselves over the same ridges, the relief fills in underneath them - and the frame it
+// ends on is the map's own first frame, held for the last four tenths of a second. So there is
+// no crossfade to invent: at 7.6 seconds the canvas is switched on at full opacity behind the
+// film and the film is faded off the top of it. The film's last frame is 3.6/255 away from the
+// map's first with no camera drift, and that measurement is the only reason to do this at all
+// rather than dissolve from a photograph into a map and hope.
+// It is a backdrop, never a gate. The words are over it from the first frame, the page
+// scrolls, and the first scroll, key or link hands over at once. Everything a video can do
+// wrong - autoplay refused, nothing decoded, a stall, no map to hand over to - drops the film
+// and gives the visitor the reveal the map has always had.
+// There is one cut of it and it is 16:9, so portrait windows and phones are not offered it.
+const FILM = (() => {
+  const AT = 7.6;            // s: where the film has become the map and starts holding it
+  const AIR = 7;             // s: and where the air over it starts to go, a little before that
+  const WIDE = 16 / 9;       // the film's shape, and the shape the map was framed against
+  const START_BY = 2500;     // ms we wait for a first frame before giving up on the film
+  const STALL = 1100;        // ms of a stopped clock that is a stall and not a hiccup
+  const OUT = 650;           // ms the film takes to fade off the map at the handover
+  const QUICK = 400;         // and at a skip, which is a dissolve and should be brisk
+  const EASE = 1500;         // ms the camera takes to let the film's crop go afterwards
+  const CLEAR = (AT - AIR) * 1000;   // ms the air takes to go, inside the film's own last second
+  const HOLD = 200;          // ms between the map's frames while it is hidden under the film
+  const WAIT = 4000;         // ms we hold the last frame for a map that has not arrived yet
+  const SEEN = 'mw.film.seen';
+  const WHERE = new URL('../film/', import.meta.url);
+  // VP9 first and H.264 second, so a browser picks one and fetches only that one: Chrome and
+  // Firefox take the WebM, Safari the MP4, and neither of them spends a byte on the other. If
+  // a browser can take neither - or neither is there, which is what a deploy that forgot this
+  // folder looks like - the sources run out and the film is dropped where they are made below.
+  // The MP4's own bitstream says avc1.640428: High profile at level 4.0 with the flag that
+  // declares it has no B-slices, which this one has not. The string here claims the same
+  // profile and level without that promise, so the file can only be a subset of what is
+  // asked for and no decoder that takes the one can refuse the other. It is written this way
+  // round because a type is only ever a hint for choosing a source, never checked against the
+  // bytes - and because 640028 is the string every player in the world is tested against,
+  // which matters most for the browser this file exists for and that cannot be tried here.
+  const CUT = [['karkonosze-1080.webm', 'video/webm; codecs=vp9'],
+               ['karkonosze-1080.mp4', 'video/mp4; codecs=avc1.640028']];
+
+  // `due` is when the film arrived at its last frame with no map to give it to, and so what
+  // the hold at the end is being measured from; `ease` is when the camera was handed back
+  // its own field of view. Both are clocks, and nought means not yet.
+  let el = null, veil = null, hooks = null, due = 0, over = false, watch = 0, ease = 0, airTill = 0;
+
+  // Once per browser. Storage can be switched off, full, or throw outright in a private
+  // window; a film that plays a second time because a flag could not be written is a much
+  // smaller failure than a page that does not boot, so every touch of it is wrapped and the
+  // answer when it fails is "not seen". The flag goes down when the film is started rather
+  // than when it ends: by then the bytes are already being spent, and a browser that will
+  // not autoplay a muted video - an iPad in low power mode is the real case - would
+  // otherwise fetch the whole film again on every visit the owner of it ever makes.
+  const seen = () => { try { return localStorage.getItem(SEEN) === '1'; } catch (e) { return false; } };
+  const remember = () => { try { localStorage.setItem(SEEN, '1'); } catch (e) { /* then it plays again */ } };
+  // and the one case where it is given back: the sources ran out, so nothing arrived, nothing
+  // was shown and nothing was spent. Every other way of losing the film has already cost the
+  // visitor something, and those keep the flag down; this one would otherwise spend a
+  // browser's single viewing on a deploy that had forgotten the folder.
+  const forget = () => { try { localStorage.removeItem(SEEN); } catch (e) { /* nothing was written either */ } };
+
+  // Who gets it. ?film=1 forces it past the flag and past the two checks that only ask
+  // whether this is a fresh look at the top of the page over a connection worth spending
+  // three megabytes of - that is what makes it testable - and past nothing else: there is no
+  // portrait cut to force, nothing to hand over to without WebGL2 behind it, and a request
+  // for a still or a social card is not a request for a film.
+  const wanted = () => {
+    const forced = Q.get('film');
+    if (forced === '0') return false;
+    if (reduce || SMALL || STILL !== null || OG || Q.has('cam')) return false;
+    if (innerWidth / innerHeight < 1.2) return false;
+    if (document.hidden) return false;
+    if (forced === '1') return true;
+    if (seen()) return false;
+    const net = navigator.connection;
+    if (net && (net.saveData || /[23]g/.test(net.effectiveType || ''))) return false;
+    return !location.hash && scrollY < 4;
+  };
+
+  // Any sign that the visitor would rather have the page than the film: a scroll, a wheel, a
+  // touch, a key, a click on a link. The map takes over at once under a quick dissolve - out
+  // of the photograph, if that is where the film still is, which is not the seamless handover
+  // but is the right answer to being asked to get out of the way. A tab that goes away counts
+  // too: there is nobody to show the rest to, and its clock would stall anyway.
+  const SKIP = ['wheel', 'touchstart', 'keydown', 'scroll'];
+  const LCAP = { capture: true, passive: true };
+  const MOD = { Shift: 1, Control: 1, Alt: 1, Meta: 1 };
+  const onSkip = e => { if (e.type !== 'keydown' || !MOD[e.key]) skip(); };
+  const onLink = e => { if (e.target.closest && e.target.closest('a[href]')) skip(); };
+  const onAway = () => { if (document.hidden) skip(); };
+  const skips = on => {
+    for (const t of SKIP) if (on) addEventListener(t, onSkip, LCAP); else removeEventListener(t, onSkip, LCAP);
+    if (on) { document.addEventListener('click', onLink, true); document.addEventListener('visibilitychange', onAway); }
+    else { document.removeEventListener('click', onLink, true); document.removeEventListener('visibilitychange', onAway); }
+  };
+  const skip = () => { if (el && !over) hooks ? cut(QUICK) : give('skipped before the map was up'); };
+  // There is one cut of the film and it is 16:9. If the window stops being that shape while it
+  // is playing - a tablet turned over, a window dragged narrow - `cover` crops the film to a
+  // slice of itself while the map behind it swings to the camera it keeps for portrait
+  // screens, and the two are no longer the same view: the handover would be the hard jump the
+  // whole thing exists to avoid. The test is the one that offered the film in the first place,
+  // and the answer is `give` rather than `skip` because nothing can be matched any more - the
+  // map comes up its own way instead of dissolving out of a crop of nothing.
+  const onShape = () => { if (el && !over && innerWidth / innerHeight < 1.2) give('the window stopped being the film\'s shape'); };
+
+  // The handover. The canvas is put at full opacity under the film - instantly, with the frame
+  // the film is holding already drawn into it - and the film is faded off the top, then taken
+  // out of the document so the decoder and its frames go back. Nothing on screen moves except
+  // one opacity, and underneath it is the same picture.
+  const cut = ms => {
+    if (over) return;
+    over = true; due = 0;
+    ease = performance.now();            // from here the camera lets the film's crop go
+    stop();
+    if (hooks) hooks.cut();
+    // the air has normally gone already, in the film's own last six tenths; what is left here
+    // is the skip, where it goes with the film it was put up for
+    fade(ms, EASE);
+  };
+  // And giving up on it. Whatever is behind comes up the way it always does - the land rising,
+  // the lights coming on in order, the canvas fading in over a second and a half - while the
+  // film goes out from wherever it had got to, which is a soft crossfade out of the
+  // photograph. No crop is let go of here, because nothing was ever matched.
+  const give = why => {
+    if (over) return;
+    over = true; due = 0; ease = 0;
+    MW.film = why;                       // what went wrong, for anyone looking at window.MW
+    stop();
+    if (hooks) hooks.give();
+    fade(OUT, OUT);                      // nothing was matched, so nothing is eased: both go
+  };
+  const stop = () => { clearInterval(watch); watch = 0; skips(false); removeEventListener('resize', onShape); };
+  // The air over the film, going. It is cleared once and stays cleared, so whoever gets there
+  // first sets the length of it: the film's own last six tenths of a second on the way to the
+  // handover, or the fade if the film is skipped or dropped before that.
+  const air = (s, ms) => {
+    if (!s || s.classList.contains('off')) return;
+    s.style.transitionDuration = ms + 'ms';
+    s.classList.add('off');
+    airTill = performance.now() + ms;    // when it will be gone, for whoever takes the layer away
+  };
+  const fade = (ms, out) => {
+    const v = el, s = veil; el = null; veil = null; hooks = null;
+    labelsEl.style.opacity = '';         // the graticule comes back as the film goes
+    // the air is given whatever is left of its own clearing, never cut short: a scrim taken
+    // off the page half way down is a step up in the one part of the frame it is there for
+    if (s) { air(s, out); setTimeout(() => s.remove(), Math.max(0, airTill - performance.now()) + 90); }
+    if (!v) return;
+    v.style.transitionDuration = ms + 'ms';
+    v.classList.add('off');
+    // Nothing was ever decoded, so what is on screen is the poster - and it is still the
+    // poster once the sources are taken away, which makes this invisible. A browser that
+    // refuses to start a muted video refuses within a few milliseconds, and without this the
+    // whole film keeps arriving until the teardown below: three megabytes of someone's data
+    // for a film they were never shown. An iPad in low power mode is the real case.
+    if (v.readyState < 2) { while (v.firstChild) v.removeChild(v.firstChild); v.load(); }
+    setTimeout(() => {
+      v.pause();
+      while (v.firstChild) v.removeChild(v.firstChild);
+      v.removeAttribute('poster'); v.removeAttribute('src');
+      v.load();                          // hands the decoder back now, not at the next sweep
+      v.remove();
+    }, ms + 90);
+  };
+
+  // The element, and every byte it asks for, is made here rather than in the HTML: a visitor
+  // who will not see the film must not spend anything on it, so there is no src, no poster and
+  // no preload hint anywhere in the document until this runs. The poster is the film's own
+  // first frame - not the still it was generated from, which is 6.7/255 away from it - so the
+  // hero is that photograph from the first moment there is anything to see.
+  const open = () => {
+    const v = el = document.createElement('video');
+    v.className = 'film';
+    v.muted = v.defaultMuted = true;     // nothing starts on its own with sound
+    v.playsInline = true; v.preload = 'auto';
+    v.disablePictureInPicture = true; v.disableRemotePlayback = true;   // it is a backdrop, not a film to send to a television
+    v.setAttribute('aria-hidden', 'true'); v.tabIndex = -1;
+    v.poster = new URL('karkonosze-poster.webp', WHERE).href;
+    // A <video> with sources under it never fires an error of its own: when the list is
+    // exhausted the element simply goes quiet, waiting for a source that is never going to
+    // be added. So the sources are counted out one by one, and when the last of them has
+    // failed the film is dropped there and then instead of two and a half seconds later on
+    // the deadline below - which is what lets a deploy that forgot this folder give the
+    // visitor their one viewing back, four tenths of a second in and none of it spent.
+    let gone = 0;
+    for (const [f, type] of CUT) {
+      const s = document.createElement('source');
+      s.src = new URL(f, WHERE).href; s.type = type;
+      s.addEventListener('error', () => { if (++gone >= CUT.length) { forget(); give('the film would not load'); } });
+      v.appendChild(s);
+    }
+    // and the air that goes over the film and under the words, in its own layer because the
+    // film and the air it puts in front of the words do not come and go together
+    veil = document.createElement('div');
+    veil.className = 'film-scrim';
+    veil.setAttribute('aria-hidden', 'true');
+
+    // The film is built here, which is where the bytes start arriving - a <video> fetches and
+    // plays off its sources whether or not it is in a document - but it is not put over the
+    // page until there is a photograph to put there. An empty layer over a hero that has
+    // already drawn itself is the one thing this must never do: between the element going in
+    // and its poster arriving it would be a flat dark box with the words floating on it, a
+    // fifth of a second of it on a fast connection and the better part of a second on a slow
+    // one, and the point of the film is that the hero is that photograph from the first
+    // moment there is anything to see. So the layer waits for the poster to decode, or for
+    // the film's own first frame if that gets there first, and if neither arrives the
+    // deadlines below drop the film with nothing ever having been shown.
+    const put = () => {
+      if (!el || over || v.isConnected) return;
+      labelsEl.style.opacity = '0';      // the map's labels belong to the map, not to the film
+      canvas.after(v);
+      v.after(veil);                     // and the air goes up with the picture it is there for
+    };
+    const first = new Image();
+    first.fetchPriority = 'high';        // it is the first picture on the page and nothing is behind it
+    // decode() says when it can be painted without a blank frame, but it is not everywhere and
+    // a throw here would take the whole boot down with it, so `load` is what is actually
+    // listened to and the decode is only a wait on top of it
+    first.addEventListener('load', () => { if (first.decode) first.decode().then(put, put); else put(); });
+    first.src = v.poster;                // no handler on error: the film's own first frame will do
+    v.addEventListener('loadeddata', put);
+
+    // Where the handover is taken from: the film's own clock, never ours.
+    // requestVideoFrameCallback reports the presentation time of the frame that is on the
+    // glass, which is the only clock here accurate to a frame. timeupdate, a quarter of a
+    // second coarse, is both the fallback for the browsers without it and the net underneath
+    // it if frames stop being presented at all; `ended` is the floor under both. The last
+    // four tenths of a second are a hold on the map's own frame, so a late trigger costs
+    // nothing and an early one cannot happen.
+    // The air comes off the same clock, six tenths of a second earlier. By seven seconds the
+    // film has become the map - the contours are drawn and the relief is in - so the scrim
+    // can go while the film is still there to be measured against, and the handover then
+    // lands on the map exactly as the map looks. Cleared afterwards instead, it would be a
+    // curtain lifting off the page a second and a half after the page had arrived.
+    const at = () => { if (el && !over) { if (hooks) cut(OUT); else due = due || performance.now(); } };
+    const clock = t => { if (t >= AIR) air(veil, CLEAR); if (t >= AT) at(); };
+    if (v.requestVideoFrameCallback) {
+      const tick = (_, meta) => { if (!el || over) return; clock(meta.mediaTime); if (meta.mediaTime < AT && !over) v.requestVideoFrameCallback(tick); };
+      v.requestVideoFrameCallback(tick);
+    }
+    v.addEventListener('timeupdate', () => clock(v.currentTime));
+    v.addEventListener('ended', at);
+    v.addEventListener('error', () => give('the film would not decode'));
+
+    // Three deadlines on one clock. A film that has not shown a frame inside two and a half
+    // seconds is not going to open this page. A film whose clock stops for more than a second
+    // in the middle has stopped being a film. And a film holding its last frame with nothing
+    // to give it to waits four seconds for a map - the frame it holds IS the map's first
+    // frame, so waiting costs nothing and looks like nothing - and then lets the page bring
+    // itself up the way it does when there is no map at all. All three drop the film. The
+    // hold at the end is not a stall, which is why it is answered before the clock is read.
+    const opened = performance.now();
+    let at0 = 0, moved = 0;
+    watch = setInterval(() => {
+      if (!el || over) return;
+      if (due) { if (performance.now() - due > WAIT) give('no map arrived to hand over to'); return; }
+      if (el.ended) return;
+      const t = el.currentTime;
+      if (t > at0 + 1e-3) { at0 = t; moved = performance.now(); }
+      else if (!moved) { if (performance.now() - opened > START_BY) give('the film never started'); }
+      else if (performance.now() - moved > STALL) give('the film stalled');
+    }, 150);
+
+    skips(true);
+    addEventListener('resize', onShape);   // and it is given up if the window stops being its shape
+    remember();                            // this visit is the one that gets it, however it goes
+    const p = v.play();
+    if (p && p.catch) p.catch(() => give('the browser would not start the film'));
+  };
+
+  return {
+    get wanted() { return wanted(); },
+    get running() { return !!el && !over; },   // there is a film on screen to hand over from
+    get live() { return !!el && !over && !!hooks; },   // and the map is drawing underneath it
+    hold: HOLD,
+    open, give,
+    // The map, once it is up, asks for the film and says how to be handed to.
+    claim(h) {
+      if (!el || over) return false;
+      hooks = h;
+      if (due) cut(OUT);                 // it is already holding its last frame: take it now
+      return true;
+    },
+    // The field of view that puts the map behind exactly what the film is showing, and the
+    // ease that gives it back. `object-fit: cover` on a 16:9 film in a window wider than 16:9
+    // fills the width and loses the top and the bottom, so it shows a narrower angle than the
+    // map does in the same window - a maximised browser on a 1080p monitor is about 1920x950,
+    // and without this the picture would jump a tenth of its width at the handover. A window
+    // 16:9 or narrower loses the sides instead, which is what a vertical field of view does
+    // there anyway, so that case is left alone. Afterwards it eases out over a second and a
+    // half, which reads as the camera settling back once the film has let go of it.
+    fov(own, aspect, now) {
+      let k = 1;
+      if (!(el && !over && hooks)) {
+        if (!ease) return own;
+        const t = (now - ease) / EASE;
+        if (t >= 1) { ease = 0; return own; }
+        if (t > 0) k = 1 - t * t * (3 - 2 * t);   // a settle, not a snap: at rest at both ends
+      }
+      return aspect <= WIDE ? own : own + (2 * Math.atan(Math.tan(own / 2) * WIDE / aspect) - own) * k;
+    },
+  };
+})();
+
 function start(bake, gl) {
   if (!gl) throw new Error('no webgl2');
   const { heights } = bake;
@@ -2399,7 +2704,7 @@ function start(bake, gl) {
     return out;
   };
 
-  let cur = STILL !== null ? STILL : 0, last = performance.now(), t0 = last, visible = true, rafId = 0, revealStart = 0, dirty = true;
+  let cur = STILL !== null ? STILL : 0, last = performance.now(), t0 = last, visible = true, rafId = 0, slowId = 0, revealStart = 0, dirty = true;
   let ftFrom = 0, ftSum = 0, ftN = 0;      // the open frame-time window: when it started, and what is in it
   const P2 = [0, 0, 0];
   const mdim = new Float32Array(LAMPS.length).fill(1);
@@ -2421,7 +2726,12 @@ function start(bake, gl) {
     const c = camAt(Math.min(n - 1 - 1e-4, Math.max(0, cur)));
     const dist = c.dist * (portrait() ? c.pd : 1), pr = c.pitch * Math.PI / 180, yr = c.yaw * Math.PI / 180;
     eye = [c.t[0] + Math.sin(yr) * Math.cos(pr) * dist, c.t[1] + Math.sin(pr) * dist, c.t[2] + Math.cos(yr) * Math.cos(pr) * dist];
-    const fov = c.fov * Math.PI / 180, aspect = cw / ch;
+    const aspect = cw / ch;
+    // the field of view the frame is actually drawn with: the map's own, or - while the
+    // opening film is over it, and easing out for a second and a half after - the one that
+    // reproduces the film's crop. basis.th below and the label projection both come off this
+    // one number, so the pointer and the labels never disagree with the picture.
+    const fov = FILM.fov(c.fov * Math.PI / 180, aspect, now);
     const V = M.look(eye, c.t, [0, 1, 0]), Pm = M.persp(fov, aspect, 1, 700);
     VP = M.mul(Pm, V);
     const fwd = [c.t[0] - eye[0], c.t[1] - eye[1], c.t[2] - eye[2]], fl = Math.hypot(...fwd); fwd.forEach((v, k) => fwd[k] = v / fl);
@@ -2784,8 +3094,9 @@ function start(bake, gl) {
     // happened to come in cheap would spend the whole page breathing between two resolutions,
     // and that is more noticeable than either end of it. Reduced motion is left out - there is
     // nothing animating there to be smooth - and so is a frozen frame, which is a still at
-    // whatever rate it is redrawn.
-    if (!reduce && STILL === null && curDpr > 1 && revealStart && now - revealStart > 3000) {
+    // whatever rate it is redrawn. So is the map under the opening film, which is deliberately
+    // drawn at five frames a second and would read as a machine in trouble.
+    if (!reduce && STILL === null && !FILM.live && curDpr > 1 && revealStart && now - revealStart > 3000) {
       if (!ftFrom) ftFrom = now;                       // the window opens on the first frame that counts
       else if (now - ftFrom > 2500) {
         // a dozen frames is enough of a window to mean something, and the bar has to be this
@@ -2795,7 +3106,14 @@ function start(bake, gl) {
         ftFrom = 0; ftSum = 0; ftN = 0;                // and the next one opens fresh, after the resize
       } else if (dt < .09) { ftSum += dt * 1000; ftN++; }   // a frame off the clamp was the tab being away
     }
-    if (visible && !document.hidden && (!reduce || wasDirty || settling)) rafId = requestAnimationFrame(loop);
+    if (visible && !document.hidden) {
+      // Under an opaque film there is no reason to draw the map sixty times a second: none of
+      // it is on screen, and the film wants the GPU more than it does. Five frames a second
+      // keeps the smoothings and the lights where they belong, and the handover draws one
+      // more before the canvas is switched on, so what appears is current to that frame.
+      if (FILM.live) { if (!slowId) slowId = setTimeout(() => { slowId = 0; kick(); }, FILM.hold); }
+      else if (!reduce || wasDirty || settling) rafId = requestAnimationFrame(loop);
+    }
   };
   const kick = () => { if (!rafId && visible && !document.hidden) { last = performance.now(); rafId = requestAnimationFrame(loop); } };
 
@@ -2817,10 +3135,32 @@ function start(bake, gl) {
     const fresh = canvas.cloneNode(false); canvas.replaceWith(fresh);
     root.classList.remove('has-world');
     flat2D(bake, fresh);
+    FILM.give('the GPU reset');    // there is no 3D map left to hand the film to
   });
 
   root.classList.add('has-world');
-  requestAnimationFrame(() => { canvas.classList.add('on'); revealStart = performance.now(); kick(); });
+  // A film over the top changes how the map is brought up, and nothing else about it. The
+  // reveal is dated far enough back to count as finished - the land fully up, every lamp lit,
+  // nothing left settling - because the frame the film ends on is a settled map and the first
+  // frame the canvas shows has to be that one. The canvas itself stays off until the handover
+  // switches it on, by which time it holds the same picture as the film above it.
+  if (FILM.running) { revealStart = performance.now() - 6e4; kick(); }
+  // The map offers itself to the film, and the film says whether there is still anything to
+  // hand over - it may have been skipped or dropped in the seconds the map took to come up.
+  // If the answer is no, the page brings itself up the way it always has: the land rising,
+  // the lights coming on in order, the canvas fading in over a second and a half.
+  if (!FILM.claim({
+    cut: () => {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+      if (slowId) { clearTimeout(slowId); slowId = 0; }
+      dirty = true; loop(performance.now());    // one frame at the film's crop, drawn unseen
+      canvas.classList.add('cut', 'on');        // and shown without the 1.6 s fade in
+      requestAnimationFrame(() => { canvas.classList.remove('cut'); kick(); });
+    },
+    give: () => { revealStart = performance.now(); canvas.classList.add('on'); dirty = true; kick(); },
+  })) {
+    requestAnimationFrame(() => { canvas.classList.add('on'); revealStart = performance.now(); kick(); });
+  }
 }
 
 // ---------------- no WebGL: the same land as a flat survey sheet ----------------
@@ -2828,7 +3168,7 @@ function flat2D(bake, cv = canvas) {
   const ctx = cv.getContext('2d');
   if (!ctx) { root.classList.add('no-world'); return; }
   root.classList.add('flat-world');
-  root.style.setProperty('--dawn', '0');   // the flat sheet has no dawn, and --dawn starts as a colour
+  root.style.setProperty('--dawn', '0');   // the flat sheet has no dawn, and nothing else here will say so
   const { heights } = bake;
   const shadeCanvas = document.createElement('canvas');
   shadeCanvas.width = N; shadeCanvas.height = N;
@@ -2988,6 +3328,10 @@ async function decodeHere(url) {
 (async () => {
   let glctx = null;
   try { glctx = canvas.getContext('webgl2', { antialias: true, alpha: true, premultipliedAlpha: true, stencil: true, powerPreference: 'high-performance' }); } catch (e) { glctx = null; }
+  // The film goes up before the map's own data is asked for, so the photograph is on screen at
+  // the first paint there can be one; all it needed to know was that there is a map to hand
+  // over to, which is to say WebGL2, and that is now settled.
+  if (glctx && FILM.wanted) FILM.open();
   const hm = new URL(`karkonosze-${N}.png`, DATA).href;
   try {
     const res = await fetch(new URL('karkonosze.json', DATA));
@@ -3010,20 +3354,22 @@ async function decodeHere(url) {
     worker.onmessage = async e => {
       if (e.data.needPixels) {
         try { const p = await decodeHere(hm); worker.postMessage(p, [p.pixels.buffer]); }
-        catch (err) { worker.terminate(); root.style.setProperty('--dawn', '0'); root.classList.add('no-world'); console.warn('the map could not be read', err); }
+        catch (err) { worker.terminate(); FILM.give('the map could not be read'); root.style.setProperty('--dawn', '0'); root.classList.add('no-world'); console.warn('the map could not be read', err); }
         return;
       }
-      if (e.data.failed) { worker.terminate(); root.style.setProperty('--dawn', '0'); root.classList.add('no-world'); console.warn('the map could not be read', e.data.failed); return; }
+      if (e.data.failed) { worker.terminate(); FILM.give('the map could not be read'); root.style.setProperty('--dawn', '0'); root.classList.add('no-world'); console.warn('the map could not be read', e.data.failed); return; }
       worker.terminate();
       if (!glctx) { flat2D(e.data); return; }
       try { start(e.data, glctx); } catch (err) {
         console.warn('3D map unavailable, drawing the flat map instead.', err);
+        FILM.give('the 3D map would not start');   // the flat sheet brings itself up instead
         const fresh = canvas.cloneNode(false); canvas.replaceWith(fresh); flat2D(e.data, fresh);
       }
     };
-    worker.onerror = () => { root.style.setProperty('--dawn', '0'); root.classList.add('no-world'); };
+    worker.onerror = () => { FILM.give('the map could not be read'); root.style.setProperty('--dawn', '0'); root.classList.add('no-world'); };
     worker.postMessage({ N, W, D, cx: CX, cz: CZ, hm, F });
   } catch (err) {
+    FILM.give('the map could not be read');
     root.style.setProperty('--dawn', '0');
     root.classList.add('no-world');
     console.warn('the map could not be read', err);
